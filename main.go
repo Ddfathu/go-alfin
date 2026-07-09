@@ -47,7 +47,7 @@ func main() {
 func handle(c net.Conn) {
 	defer c.Close()
 	
-	// Mode Sabar 2 detik untuk membaca full tumpukan request payload kotor
+	// Mode Sabar 2 detik untuk membaca full tumpukan request payload kotor lu
 	c.SetReadDeadline(time.Now().Add(2 * time.Second))
 	buf := make([]byte, 65536)
 	n, err := c.Read(buf)
@@ -58,7 +58,7 @@ func handle(c net.Conn) {
 
 	rawPayload := buf[:n]
 
-	// 🛡️ JALUR MULTIPLEXING SSL/TLS MURNI (Stunnel)
+	// 🛡️ MULTIPLEXING JALUR SSL/TLS MURNI (Stunnel)
 	if rawPayload[0] == TLS_HANDSHAKE_BYTE {
 		sslTargetHost := getEnv("SSL_TARGET_HOST", "127.0.0.1")
 		sslTargetPort := getEnv("SSL_TARGET_PORT", "2443")
@@ -91,7 +91,7 @@ func handle(c net.Conn) {
 		return
 	}
 
-	// 🌐 JALUR WEBSOCKET HANDSHAKE (HTTP Custom / Injector)
+	// 🌐 JALUR WEBSOCKET HANDSHAKE
 	req := string(rawPayload)
 	wsKey := ""
 	
@@ -128,8 +128,8 @@ func handle(c net.Conn) {
 	}
 	defer ssh.Close()
 
-	go ioCopy(ssh, c, true) // Jalur HP -> Dropbear SSH (Filter Aktif)
-	ioCopy(c, ssh, false)   // Jalur Dropbear SSH -> HP (Lem Perangko 15 Detik Aktif)
+	go ioCopy(ssh, c, true) // Jalur HP -> SSH
+	ioCopy(c, ssh, false)   // Jalur SSH -> HP (Dengan Lem Perangko Aman)
 }
 
 func ioCopy(dst, src net.Conn, filter bool) {
@@ -141,11 +141,12 @@ func ioCopy(dst, src net.Conn, filter bool) {
 
 	for {
 		if !filter {
-			// 🔥 JIMAT SAKRAL: Amankan jeda baca ke 15 detik agar tidak dianggap mati oleh Cloudflare
+			// 🔥 Amankan jeda baca ke 15 detik agar tidak dianggap menyerang oleh Cloudflare
 			src.SetReadDeadline(time.Now().Add(15 * time.Second))
 		}
 
 		n, err := src.Read(b)
+		
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() && !filter {
 				// Tembak ping sewajarnya tiap 15 detik pas sepi biar jalur tetep hidup
@@ -159,17 +160,11 @@ func ioCopy(dst, src net.Conn, filter bool) {
 			continue
 		}
 
-		// 🔥 RACIKAN DETEKTIF ENHANCED ANTI-KORUP
 		if filter && first {
 			idx := bytes.Index(b[:n], []byte("SSH-"))
 			if idx != -1 { 
-				// Ketemu! Buang semua teks sampah kotor di depan "SSH-", oper murni biner SSH aslinya
-				_, err = dst.Write(b[idx:n])
-				if err != nil { return }
-				first = false // Kunci gembok terbuka, paket selanjutnya langsung loss
-			} else {
-				// Selama belum ketemu string "SSH-", abaikan/buang semua data payload kotor enhanced-nya
-				continue
+				dst.Write(b[idx:n]) 
+				first = false 
 			}
 		} else {
 			_, err = dst.Write(b[:n])
