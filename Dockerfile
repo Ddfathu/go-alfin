@@ -1,12 +1,16 @@
 FROM golang:1.22-alpine AS builder
 WORKDIR /app
 COPY main.go .
-# 🛠️ KUNCI SUKSES: Tambahkan 'go mod tidy' sebelum di-build sesuai kemauan sistemnya
 RUN go mod init turbo-tunnel && go mod tidy && go build -o turbo-proxy main.go
 
 FROM alpine:latest
-# Instal bash, dropbear, stunnel, openssl, cloudflared, dan shadow untuk menu
-RUN apk add --no-cache bash dropbear stunnel openssl cloudflared shadow
+# 1. Instal semua paket yang VALIDE & ADA di Alpine (Tanpa cloudflared)
+RUN apk add --no-cache bash dropbear stunnel openssl shadow wget
+
+# 2. DOWNLOAD BINER CLOUDFLARED LANGSUNG SECARA MANUAL
+# Kita ambil versi linux-amd64 resmi, lalu pindahkan ke /usr/local/bin
+RUN wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O /usr/local/bin/cloudflared && \
+    chmod +x /usr/local/bin/cloudflared
 
 # Buat folder sistem yang diperlukan
 RUN mkdir -p /etc/dropbear /etc/stunnel /var/run /usr/bin
