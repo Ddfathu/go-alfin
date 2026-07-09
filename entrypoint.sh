@@ -7,27 +7,16 @@ SSL_INTERNAL_PORT="${SSL_INTERNAL_PORT:-2443}"
 WS_INTERNAL_PORT="${WS_INTERNAL_PORT:-8880}"
 
 # =====================================================================
-# 🔥 FIX SAKTI ALPINE: Pahat ALL Jenis Host Keys Dropbear (Lama & Baru)
+# 🔥 SETUP OPENSSH: Pahat Host Keys & Buka Parameter Enkripsi Longgar
 # =====================================================================
-echo "[*] Memeriksa dan Membuat Kompatibilitas Host Keys Dropbear..."
-mkdir -p /etc/dropbear
+echo "[*] Membuat Host Keys OpenSSH..."
+ssh-keygen -A
 
-if [ ! -f /etc/dropbear/dropbear_rsa_host_key ]; then
-    dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key -s 2048
-fi
-if [ ! -f /etc/dropbear/dropbear_ed25519_host_key ]; then
-    dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key
-fi
-# Tambah jenis key ecdsa biar injector HP tipe lama/enhanced gak milih-milih proposal
-if [ ! -f /etc/dropbear/dropbear_ecdsa_host_key ]; then
-    dropbearkey -t ecdsa -f /etc/dropbear/dropbear_ecdsa_host_key -s 256
-fi
-
-echo "[*] Mengonfigurasi Server Message Dropbear (Banner)..."
-cat << 'EOF' > /etc/dropbear_banner
+echo "[*] Mengonfigurasi Banner SSH..."
+cat << 'EOF' > /etc/ssh_banner
 =================================================
                   SELAMAT MENIKMATI
-             PREMIUM SSH SERVER DROPBEAR modssh        
+             PREMIUM SSH SERVER OPENSSH modssh        
 =================================================
        Dilarang Torrent / DDOS / Hacking! 
                  Powered By: dedefathu
@@ -44,28 +33,44 @@ echo -e "\e[1;32m       [✓] BERHASIL TERHUBUNG KE SERVER!         \e[0m"
 echo -e "\e[1;36m=================================================\e[0m"
 echo -e "\e[1;37m Username     : \e[1;33m$USER\e[0m"
 echo -e "\e[1;37m Waktu Server : \e[1;33m$(date)\e[0m"
-echo -e "\e[1;37m OS           : \e[1;33mAlpine Linux (Turbo Mode)\e[0m"
+echo -e "\e[1;37m OS           : \e[1;33mAlpine Linux (OpenSSH Turbo)\e[0m"
 echo -e "\e[1;36m=================================================\e[0m"
 echo -e "\e[1;31m   TETAP PATUHI RULES SERVER AGAR TIDAK BANNED   \e[0m"
 echo -e "\e[1;36m=================================================\e[0m"
 EOF
 chmod +x /etc/profile.d/99-respon-server.sh
 
+echo "[*] Membuat Konfigurasi sshd_config Ramah Injector..."
+cat << 'EOF' > /etc/ssh/sshd_config
+Port 22
+ListenAddress 127.0.0.1
+PermitRootLogin yes
+PasswordAuthentication yes
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+UsePAM yes
+PrintMotd no
+Banner /etc/ssh_banner
+AcceptEnv LANG LC_*
+Subsystem sftp /usr/lib/ssh/sftp-server
+
+# 🔥 JALUR SAKTI: Buka paksa semua kecocokan proposal enkripsi lawas & enhanced
+KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1
+Ciphers +aes128-cbc,3des-cbc,aes128-ctr,aes192-ctr,aes256-ctr
+MACs +hmac-sha1,hmac-sha1-96
+EOF
+
 echo "[*] Mengonfigurasi User SSH..."
+# OpenSSH di Alpine butuh user shell yang terdaftar resmi
 if ! id "$USER_NAME" &>/dev/null; then
-    adduser -D -s /bin/bash "$USER_NAME"
+    useradd -m -s /bin/bash "$USER_NAME"
 fi
 echo "$USER_NAME:$USER_PASS" | chpasswd
 
-# =====================================================================
-# 🔥 JINAKKAN DROPBEAR: Buka Pintu chiper & kex lawas (Anti-Proposals Error)
-# =====================================================================
-echo "[*] Memulai Dropbear Server dengan Mode Kompatibilitas Injector..."
-# Tambah flag -K 20 (Keep-alive biar ga gampang DC), -I 0 (Disable idle timeout)
-# Kita jalankan langsung agar dia mencocokkan proposal chiper HP lu
-/usr/sbin/dropbear -p 127.0.0.1:22 -b /etc/dropbear_banner -W 65536 -K 20 -I 0
+echo "[*] Memulai OpenSSH Server di Port Lokal 22..."
+/usr/sbin/sshd
 
-# 🔥 TAMBAHAN KESELAMATAN: Buat Sertifikat SSL Stunnel
+# 🔥 TAMBAHAN SSL: Buat Sertifikat SSL Stunnel
 echo "[*] Membuat Sertifikat SSL Stunnel..."
 openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 \
     -subj "/C=ID/ST=Jakarta/L=Jakarta/O=RailwaySSH/CN=localhost" \
@@ -91,11 +96,9 @@ alias x='exit'
 alias +x='chmod +x'
 alias cls='clear;ls'
 
-# Panggil menu otomatis biar pas lu ketik 'enter' atau login langsung nongol menunya
 menu
 EOF
 
-# Daftarkan juga menu otomatis ke semua user baru yang dibuat lewat script lu
 cat <<'EOF'>> /etc/skel/.bashrc
 clear
 menu
