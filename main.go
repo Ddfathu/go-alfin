@@ -128,8 +128,8 @@ func handle(c net.Conn) {
 	}
 	defer ssh.Close()
 
-	go ioCopy(ssh, c, true) // Jalur HP -> SSH
-	ioCopy(c, ssh, false)   // Jalur SSH -> HP (Dengan Lem Perangko Aman)
+	go ioCopy(ssh, c, true) // Jalur HP -> Dropbear SSH (Filter Aktif)
+	ioCopy(c, ssh, false)   // Jalur Dropbear SSH -> HP (Lem Perangko 15 Detik Aktif)
 }
 
 func ioCopy(dst, src net.Conn, filter bool) {
@@ -141,7 +141,7 @@ func ioCopy(dst, src net.Conn, filter bool) {
 
 	for {
 		if !filter {
-			// Amankan jeda baca ke 15 detik agar tidak dianggap menyerang oleh Cloudflare
+			// 🔥 JIMAT SAKRAL: Amankan jeda baca ke 15 detik agar tidak dianggap mati oleh Cloudflare
 			src.SetReadDeadline(time.Now().Add(15 * time.Second))
 		}
 
@@ -159,18 +159,17 @@ func ioCopy(dst, src net.Conn, filter bool) {
 			continue
 		}
 
-		// 🔥 FIX ANTI-KORUP: Logika penyaringan proposal SSH Mode Enhanced
+		// 🔥 RACIKAN DETEKTIF ENHANCED ANTI-KORUP
 		if filter && first {
 			idx := bytes.Index(b[:n], []byte("SSH-"))
 			if idx != -1 { 
-				// Kirim seluruh potongan yang valid tanpa merusak ekor bit proposal cipher belakangnya
+				// Ketemu! Buang semua teks sampah kotor di depan "SSH-", oper murni biner SSH aslinya
 				_, err = dst.Write(b[idx:n])
 				if err != nil { return }
-				first = false 
+				first = false // Kunci gembok terbuka, paket selanjutnya langsung loss
 			} else {
-				// Jika tidak mengandung string SSH-, teruskan saja paket mentahnya agar tidak hang/stuck
-				_, err = dst.Write(b[:n])
-				if err != nil { return }
+				// Selama belum ketemu string "SSH-", abaikan/buang semua data payload kotor enhanced-nya
+				continue
 			}
 		} else {
 			_, err = dst.Write(b[:n])
