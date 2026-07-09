@@ -1,17 +1,18 @@
 FROM golang:1.22-alpine AS builder
 WORKDIR /app
 COPY main.go .
-RUN go build -o turbo-proxy main.go
+# 🔥 AMAN: Inisialisasi modul Go biar library crypto & encoding-nya ke-compile sempurna
+RUN go mod init turbo-tunnel && go build -o turbo-proxy main.go
 
 FROM alpine:latest
-# Instal bash, dropbear, stunnel, openssl, cloudflared, PLUS paket 'shadow' biar perintah manajemen user lebih mirip Ubuntu
+# Instal bash, dropbear, stunnel, openssl, cloudflared, dan shadow untuk menu
 RUN apk add --no-cache bash dropbear stunnel openssl cloudflared shadow
 
-# Buat folder konfigurasi yang dibutuhkan
+# Buat folder sistem yang diperlukan
 RUN mkdir -p /etc/dropbear /etc/stunnel /var/run /usr/bin
 
-# 🔥 PROSES COPY MENU: Salin semua file skrip menu lu ke biner sistem
-# Pastikan folder 'menu' berisi file addssh, delssh, dll ada di github lu
+# Salin skrip menu dari folder github lu ke sistem biner Alpine
+# *Catatan: pastikan folder 'menu' berisi file addssh dll ada di repo lu*
 COPY menu/* /usr/bin/
 RUN chmod +x /usr/bin/*
 
