@@ -40,7 +40,7 @@ echo -e "\e[1;36m=================================================\e[0m"
 EOF
 chmod +x /etc/profile.d/99-respon-server.sh
 
-echo "[*] Membuat Konfigurasi sshd_config Ramah Injector..."
+echo "[*] Membuat Konfigurasi sshd_config Ramah Injector (Anti-Rekonek)..."
 cat << 'EOF' > /etc/ssh/sshd_config
 Port 22
 ListenAddress 127.0.0.1
@@ -53,6 +53,12 @@ PrintMotd no
 Banner /etc/ssh_banner
 AcceptEnv LANG LC_*
 Subsystem sftp /usr/lib/ssh/sftp-server
+
+# 🔥 SUNTIKAN SAKTI ANTI-REKONEK: Paksa OpenSSH Jaga Jalur Tetap Hidup
+ClientAliveInterval 10
+ClientAliveCountMax 99999
+TCPKeepAlive yes
+LoginGraceTime 0
 
 # 🔥 JALUR SAKTI: Buka paksa semua kecocokan proposal enkripsi lawas & enhanced
 KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1
