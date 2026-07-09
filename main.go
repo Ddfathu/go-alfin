@@ -47,7 +47,7 @@ func main() {
 func handle(c net.Conn) {
 	defer c.Close()
 	
-	// Mode Sabar 2 detik untuk membaca full tumpukan request payload kotor lu
+	// Mode Sabar 2 detik untuk membaca full tumpukan request payload kotor
 	c.SetReadDeadline(time.Now().Add(2 * time.Second))
 	buf := make([]byte, 65536)
 	n, err := c.Read(buf)
@@ -58,7 +58,7 @@ func handle(c net.Conn) {
 
 	rawPayload := buf[:n]
 
-	// 🛡️ MULTIPLEXING JALUR SSL/TLS MURNI (Stunnel)
+	// 🛡️ JALUR MULTIPLEXING SSL/TLS MURNI (Stunnel)
 	if rawPayload[0] == TLS_HANDSHAKE_BYTE {
 		sslTargetHost := getEnv("SSL_TARGET_HOST", "127.0.0.1")
 		sslTargetPort := getEnv("SSL_TARGET_PORT", "2443")
@@ -91,7 +91,7 @@ func handle(c net.Conn) {
 		return
 	}
 
-	// 🌐 JALUR WEBSOCKET HANDSHAKE
+	// 🌐 JALUR WEBSOCKET HANDSHAKE (HTTP Custom / Injector)
 	req := string(rawPayload)
 	wsKey := ""
 	
@@ -141,12 +141,11 @@ func ioCopy(dst, src net.Conn, filter bool) {
 
 	for {
 		if !filter {
-			// 🔥 Amankan jeda baca ke 15 detik agar tidak dianggap menyerang oleh Cloudflare
+			// Amankan jeda baca ke 15 detik agar tidak dianggap menyerang oleh Cloudflare
 			src.SetReadDeadline(time.Now().Add(15 * time.Second))
 		}
 
 		n, err := src.Read(b)
-		
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() && !filter {
 				// Tembak ping sewajarnya tiap 15 detik pas sepi biar jalur tetep hidup
@@ -160,11 +159,18 @@ func ioCopy(dst, src net.Conn, filter bool) {
 			continue
 		}
 
+		// 🔥 FIX ANTI-KORUP: Logika penyaringan proposal SSH Mode Enhanced
 		if filter && first {
 			idx := bytes.Index(b[:n], []byte("SSH-"))
 			if idx != -1 { 
-				dst.Write(b[idx:n]) 
+				// Kirim seluruh potongan yang valid tanpa merusak ekor bit proposal cipher belakangnya
+				_, err = dst.Write(b[idx:n])
+				if err != nil { return }
 				first = false 
+			} else {
+				// Jika tidak mengandung string SSH-, teruskan saja paket mentahnya agar tidak hang/stuck
+				_, err = dst.Write(b[:n])
+				if err != nil { return }
 			}
 		} else {
 			_, err = dst.Write(b[:n])
