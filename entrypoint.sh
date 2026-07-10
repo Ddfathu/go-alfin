@@ -12,14 +12,16 @@ WS_INTERNAL_PORT="${WS_INTERNAL_PORT:-8880}"
 echo "[*] Membuat Host Keys OpenSSH..."
 ssh-keygen -A
 
+# 🎨 BANNER WARNA-WARNI & CENTER LOGIC UNTUK LOGIN TULISAN
+# Banner dibuat pas di tengah (Center) dengan lebar pembatas 49 karakter
 echo "[*] Mengonfigurasi Banner SSH..."
 cat << 'EOF' > /etc/ssh_banner
 =================================================
                   SELAMAT MENIKMATI
-             PREMIUM SSH SERVER OPENSSH modssh        
+      👑 PREMIUM SSH SERVER OPENSSH modssh 👑   
 =================================================
        Dilarang Torrent / DDOS / Hacking! 
-                 Powered By: dedefathu
+          👑 PRIVATE TUNNEL BY: DEDEFATHU 👑
 =================================================
 EOF
 
@@ -40,7 +42,7 @@ echo -e "\e[1;36m=================================================\e[0m"
 EOF
 chmod +x /etc/profile.d/99-respon-server.sh
 
-echo "[*] Membuat Konfigurasi sshd_config Ramah Injector (Anti-Rekonek)..."
+echo "[*] Membuat Konfigurasi sshd_config Turbo (FULL SPEED & Anti-Rekonek)..."
 cat << 'EOF' > /etc/ssh/sshd_config
 Port 22
 ListenAddress 127.0.0.1
@@ -54,20 +56,20 @@ Banner /etc/ssh_banner
 AcceptEnv LANG LC_*
 Subsystem sftp /usr/lib/ssh/sftp-server
 
-# 🔥 SUNTIKAN SAKTI ANTI-REKONEK: Paksa OpenSSH Jaga Jalur Tetap Hidup
+# 🔥 SUNTIKAN SAKTI ANTI-REKONEK
 ClientAliveInterval 10
 ClientAliveCountMax 99999
 TCPKeepAlive yes
 LoginGraceTime 0
 
-# 🔥 JALUR SAKTI: Buka paksa semua kecocokan proposal enkripsi lawas & enhanced
-KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1
-Ciphers +aes128-cbc,3des-cbc,aes128-ctr,aes192-ctr,aes256-ctr
-MACs +hmac-sha1,hmac-sha1-96
+# 🚀 RACIKAN FULL SPEED: Paksa Gunakan Enkripsi Paling Ringan (UMAC-64 & AES-128)
+# Ini mempercepat proses CPU saat download file besar sehingga speed loss 100%
+Ciphers aes128-gcm@openssh.com,aes128-ctr,aes128-cbc
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group14-sha1
+MACs umac-64-etm@openssh.com,hmac-sha1,hmac-sha1-96
 EOF
 
 echo "[*] Mengonfigurasi User SSH..."
-# OpenSSH di Alpine butuh user shell yang terdaftar resmi
 if ! id "$USER_NAME" &>/dev/null; then
     useradd -m -s /bin/bash "$USER_NAME"
 fi
@@ -120,7 +122,29 @@ else
     echo "[!] CF_TUNNEL_TOKEN kosong -> Cloudflare Tunnel dilewati."
 fi
 
-echo "[*] Memulai GOLANG TURBO TUNNEL ENGINE di Port PUBLIK $PUBLIC_PORT..."
+# 🎨 BANNER DITENGAH & WARNA-WARNI UNTUK TAMPILAN STARTUP LOG RAILWAY
+cyan="\e[1;36m"
+yellow="\e[1;33m"
+magenta="\e[1;35m"
+green="\e[1;32m"
+reset="\e[0m"
+
+rawTitle="⚡ GOLANG TUNNEL PRO: FIXED DPI DESTROYER v5.1 FULL SPEED ACTIVE ⚡"
+rawOwner="👑 PRIVATE TUNNEL BY: DEDEFATHU 👑"
+
+paddingTitle=$(( (66 - ${#rawTitle}) / 2 ))
+paddingOwner=$(( (66 - ${#rawOwner}) / 2 ))
+
+centerTitle=$(printf "%${paddingTitle}s" "")$rawTitle
+centerOwner=$(printf "%${paddingOwner}s" "")$rawOwner
+
+echo -e "${cyan}==================================================================${reset}"
+echo -e "${yellow}${centerTitle}${reset}"
+echo -e "${magenta}${centerOwner}${reset}"
+echo -e "${green}==================================================================${reset}"
+echo -e "${green}[*] Engine listening smoothly on port: ${PUBLIC_PORT}${reset}"
+echo -e "${cyan}==================================================================${reset}"
+
 exec env \
     PORT="$PUBLIC_PORT" \
     SSL_TARGET_HOST="127.0.0.1" \
