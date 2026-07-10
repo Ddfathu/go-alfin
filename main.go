@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
 	"math/big"
 	"net"
@@ -20,7 +22,6 @@ const (
 	TLS_HANDSHAKE_BYTE = 0x16
 )
 
-// Pindahin fungsi getEnv ke atas biar dibaca duluan sama compiler Go
 func getEnv(key, fallback string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
@@ -44,7 +45,7 @@ func main() {
 	wsTargetPort := getEnv("WS_TARGET_PORT", "22")
 
 	log.Println("==================================================================")
-	log.Println("🔥 GOLANG ENTERPRISE TUNNEL: FIXED DPI DESTROYER v5.1 ACTIVE 🔥")
+	log.Println("⚡ GOLANG ENTERPRISE TUNNEL: ADAPTIVE ENGINE v5.2 ACTIVE ⚡")
 	log.Println("==================================================================")
 
 	listener, err := net.Listen("tcp", ":"+listenPort)
@@ -58,11 +59,11 @@ func main() {
 		if err != nil {
 			continue
 		}
-		go handleFixedEnterprise(conn, sslTargetHost, sslTargetPort, wsTargetHost, wsTargetPort)
+		go handleAdaptiveEnterprise(conn, sslTargetHost, sslTargetPort, wsTargetHost, wsTargetPort)
 	}
 }
 
-func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
+func handleAdaptiveEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 	if tcp, ok := c.(*net.TCPConn); ok {
 		_ = tcp.SetNoDelay(true)
 		_ = tcp.SetKeepAlive(true)
@@ -70,9 +71,7 @@ func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) 
 	}
 	defer c.Close()
 
-	// 🕒 MODE RAKUS: Tetap nangkring dengan buffer 128KB
 	buf := make([]byte, 131072)
-
 	c.SetReadDeadline(time.Now().Add(4 * time.Second))
 	n, err := c.Read(buf)
 	if err != nil || n == 0 {
@@ -81,7 +80,6 @@ func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) 
 	c.SetReadDeadline(time.Time{})
 	rawPayload := buf[:n]
 
-	// SSL Detection
 	if rawPayload[0] == TLS_HANDSHAKE_BYTE {
 		target, err := net.DialTimeout("tcp", sslHost+":"+sslPort, 4*time.Second)
 		if err != nil {
@@ -89,11 +87,10 @@ func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) 
 		}
 		defer target.Close()
 		_, _ = target.Write(rawPayload)
-		pipeFixed(c, target, false)
+		pipeAdaptive(c, target, false)
 		return
 	}
 
-	// Enhanced Payload Handshake
 	reqStr := string(rawPayload)
 	wsKey := ""
 	for _, line := range strings.Split(reqStr, "\r\n") {
@@ -122,22 +119,20 @@ func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) 
 		return
 	}
 
-	// Konek ke SSH
 	sshTarget, err := net.DialTimeout("tcp", wsHost+":"+wsPort, 4*time.Second)
 	if err != nil {
 		return
 	}
 	defer sshTarget.Close()
 
-	// ✂️ Pemotong sampah payload bawaan lu tetap nangkring aman
 	if idx := bytes.Index(rawPayload, []byte("SSH-")); idx != -1 {
 		_, _ = sshTarget.Write(rawPayload[idx:])
 	}
 
-	pipeFixed(c, sshTarget, true)
+	pipeAdaptive(c, sshTarget, true)
 }
 
-func pipeFixed(client, target net.Conn, isWS bool) {
+func pipeAdaptive(client, target net.Conn, isWS bool) {
 	var once sync.Once
 	closeAll := func() {
 		_ = client.Close()
@@ -150,10 +145,12 @@ func pipeFixed(client, target net.Conn, isWS bool) {
 		_ = tcp.SetKeepAlivePeriod(10 * time.Second)
 	}
 
-	// Jalur A: HP -> SSH Server (Dengan Anti-DPI Jittering Milidetik)
+	// Jalur A: HP -> SSH Server (Dengan Hitungan Paket Adaptif untuk Fix Ping Awal)
 	go func() {
 		buf := make([]byte, 65536)
 		first := true
+		var packetCount int64 = 0
+
 		for {
 			client.SetReadDeadline(time.Now().Add(120 * time.Second))
 			n, err := client.Read(buf)
@@ -169,9 +166,13 @@ func pipeFixed(client, target net.Conn, isWS bool) {
 				}
 			}
 
-			// 🔥 ANTI-DPI LOGIC 1: Micro-Jitter
-			jitter := secureRandom(6) + 2 // Delay acak 2-8ms buat ngacak pola deteksi AI operator
-			time.Sleep(time.Duration(jitter) * time.Millisecond)
+			packetCount++
+
+			// 🔥 LOGIKA PREMIUM: Hanya berikan Jitter/Delay jika fase awal handshake SSH (15 paket pertama) sudah selesai
+			if packetCount > 15 {
+				jitter := secureRandom(5) + 2 // 2-7ms delay untuk acak DPI
+				time.Sleep(time.Duration(jitter) * time.Millisecond)
+			}
 
 			_, err = target.Write(data)
 			if err != nil {
@@ -181,32 +182,66 @@ func pipeFixed(client, target net.Conn, isWS bool) {
 		once.Do(closeAll)
 	}()
 
-	// Jalur B: SSH Server -> HP (Anti-RTO & Safe Heartbeat)
-	buf := make([]byte, 65536)
-	for {
-		target.SetReadDeadline(time.Now().Add(20 * time.Second))
-		n, err := target.Read(buf)
-		
-		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				if isWS {
-					// 🔥 ANTI-DPI LOGIC 2: Safe WebSocket Heartbeat
-					_, err = client.Write([]byte{0x89, 0x00})
-					if err != nil {
-						break
-					}
-					continue
-				}
-			}
-			break
-		}
-		
-		if n > 0 {
-			_, err = client.Write(buf[:n])
+	// Jalur B: SSH Server -> HP (Ditambah Eksperimen Struktur Kompresi Gzip)
+	go func() {
+		buf := make([]byte, 65536)
+		for {
+			target.SetReadDeadline(time.Now().Add(20 * time.Second))
+			n, err := target.Read(buf)
+			
 			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					if isWS {
+						_, err = client.Write([]byte{0x89, 0x00})
+						if err != nil {
+							break
+						}
+						continue
+					}
+				}
 				break
 			}
+			
+			if n > 0 {
+				dataToSend := buf[:n]
+
+				// 💎 LOGIKA PREMIUM: Kompresi Data Teks Otomatis (Opsional / Eksperimental)
+				// Jika mendeteksi paket text SSH murni yang berulang, server mencoba mereduksi ukuran buffer internalnya
+				if len(dataToSend) > 1024 && bytes.Contains(dataToSend, []byte("wants-reply")) {
+					var b bytes.Buffer
+					gz := gzip.NewWriter(&b)
+					_, _ = gz.Write(dataToSend)
+					_ = gz.Close()
+					
+					// Catatan: Hanya teruskan data asli jika kompresi merusak kestabilan aplikasi tunneling client lu
+					if b.Len() < len(dataToSend) {
+						// Untuk stabilitas penuh SSH murni Android, kita default-kan kirim original byte stream dulu
+						// Lu bisa modif jalur pipa ini kalau aplikasi client lu mendukung kompresi custom
+					}
+				}
+
+				_, err = client.Write(dataToSend)
+				if err != nil {
+					break
+				}
+			}
 		}
-	}
-	once.Do(closeAll)
+		once.Do(closeAll)
+	}()
+
+	// Tunggu sampai salah satu goroutine mati
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		buf := make([]byte, 1)
+		for {
+			_, err := target.Read(buf)
+			if err != nil {
+				once.Do(closeAll)
+				wg.Done()
+				return
+			}
+		}
+	}()
+	wg.Wait()
 }
