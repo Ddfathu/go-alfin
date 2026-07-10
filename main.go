@@ -20,6 +20,22 @@ const (
 	TLS_HANDSHAKE_BYTE = 0x16
 )
 
+// Pindahin fungsi getEnv ke atas biar dibaca duluan sama compiler Go
+func getEnv(key, fallback string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return fallback
+}
+
+func secureRandom(max int64) int64 {
+	nBig, err := rand.Int(rand.Reader, big.NewInt(max))
+	if err != nil {
+		return 0
+	}
+	return nBig.Int64()
+}
+
 func main() {
 	listenPort := getEnv("PORT", "8080")
 	sslTargetHost := getEnv("SSL_TARGET_HOST", "127.0.0.1")
@@ -44,14 +60,6 @@ func main() {
 		}
 		go handleFixedEnterprise(conn, sslTargetHost, sslTargetPort, wsTargetHost, wsTargetPort)
 	}
-}
-
-func secureRandom(max int64) int64 {
-	nBig, err := rand.Int(rand.Reader, big.NewInt(max))
-	if err != nil {
-		return 0
-	}
-	return nBig.Int64()
 }
 
 func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
@@ -161,7 +169,7 @@ func pipeFixed(client, target net.Conn, isWS bool) {
 				}
 			}
 
-			// 🔥 ANTI-DPI LOGIC 1: Micro-Jitter (Aman & Tidak Merusak Koneksi)
+			// 🔥 ANTI-DPI LOGIC 1: Micro-Jitter
 			jitter := secureRandom(6) + 2 // Delay acak 2-8ms buat ngacak pola deteksi AI operator
 			time.Sleep(time.Duration(jitter) * time.Millisecond)
 
@@ -183,7 +191,6 @@ func pipeFixed(client, target net.Conn, isWS bool) {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				if isWS {
 					// 🔥 ANTI-DPI LOGIC 2: Safe WebSocket Heartbeat
-					// Kirim opcode 0x89 tanpa payload tambahan agar DarkTunnel paham dan jalur tetap hidup
 					_, err = client.Write([]byte{0x89, 0x00})
 					if err != nil {
 						break
@@ -195,7 +202,6 @@ func pipeFixed(client, target net.Conn, isWS bool) {
 		}
 		
 		if n > 0 {
-			// Mengirimkan data stream SSH murni ke DarkTunnel tanpa dipecah-pecah (DIJAMIN KONEK)
 			_, err = client.Write(buf[:n])
 			if err != nil {
 				break
