@@ -17,7 +17,7 @@ echo "[*] Mengonfigurasi Banner SSH..."
 cat << 'EOF' > /etc/ssh_banner
 =================================================
                   SELAMAT MENIKMATI
-      👑 PREMIUM SSH SERVER OPENSSH modssh 👑   
+      👑 PREMIUM SSH SERVER OPENSSH goalfin 👑   
 =================================================
        Dilarang Torrent / DDOS / Hacking! 
           👑 PRIVATE TUNNEL BY: DEDEFATHU 👑
