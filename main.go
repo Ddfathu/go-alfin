@@ -8,6 +8,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -29,12 +31,17 @@ var (
 	clientMap    = make(map[string]*ClientTracker)
 )
 
-// Fungsi untuk mencatat dan memeriksa apakah aplikasi HP sedang stuck loop
+// 🔄 ZERO-JITTER BUFFER POOL: Daur ulang memori agar Go gak usah "bersih-bersih" mendadak
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 65536)
+	},
+}
+
 func checkSmartRecovery(remoteAddr string, isFail bool) bool {
 	trackerMutex.Lock()
 	defer trackerMutex.Unlock()
 
-	// Ambil IP Core-nya saja (tanpa port)
 	ip, _, _ := net.SplitHostPort(remoteAddr)
 	
 	tracker, exists := clientMap[ip]
@@ -43,22 +50,19 @@ func checkSmartRecovery(remoteAddr string, isFail bool) bool {
 		clientMap[ip] = tracker
 	}
 
-	// Jika sukses konek sampai SSH, reset counter ke nol
 	if !isFail {
 		tracker.FailCount = 0
 		tracker.LastActive = time.Now()
 		return false
 	}
 
-	// Jika terdeteksi gagal (hanya kirim sampah enhanced)
 	tracker.FailCount++
 	tracker.LastActive = time.Now()
 
-	// 🚨 DETEKSI CERDAS: Jika sudah 5 kali berturut-turut terdeteksi stuck/timeout
 	if tracker.FailCount >= 5 {
 		log.Printf("\033[31m[⚠️ AI DETECT] Aplikasi HP terdeteksi STUCK/TIMEOUT (%d x)! Mengaktifkan Force Auto-Fresh...\033[0m\n", tracker.FailCount)
-		tracker.FailCount = 0 // Reset counter setelah tindakan diambil
-		return true           // Trigger untuk putus instan/force refresh
+		tracker.FailCount = 0 
+		return true           
 	}
 
 	return false
@@ -78,13 +82,24 @@ func turboTune(c net.Conn) {
 		_ = tcp.SetKeepAlive(true)
 		_ = tcp.SetKeepAlivePeriod(10 * time.Second)
 		
-		// Buffer 256KB 262144 agar tidak ada antrean paket di level OS Railway
-		_ = tcp.SetReadBuffer(524288)  
-		_ = tcp.SetWriteBuffer(524288) 
+		// Buffer 256KB agar tidak ada antrean paket di level OS Railway
+		_ = tcp.SetReadBuffer(262144)  
+		_ = tcp.SetWriteBuffer(262144) 
 	}
 }
 
 func main() {
+	// 🔥 AMPUTASI AUTO-GC: Matikan fitur bersih-bersih otomatis bawaan Go agar tidak menahan jaringan
+	debug.SetGCPercent(-1)
+
+	// ⏰ PAWANG MEMORI OTOMATIS: Bersih-bersih berjadwal setiap 10 detik agar memori gak bengkak
+	go func() {
+		for {
+			time.Sleep(10 * time.Second)
+			runtime.GC() // Panggil pembersihan memori secara paksa di background goroutine
+		}
+	}()
+
 	listenPort := getEnv("PORT", "8080")
 	sslTargetHost := getEnv("SSL_TARGET_HOST", "127.0.0.1")
 	sslTargetPort := getEnv("SSL_TARGET_PORT", "2443")
@@ -98,7 +113,7 @@ func main() {
 	magenta := "\033[35m"
 	green := "\033[32m"
 
-	rawTitle := "⚡ GOLANG TUNNEL PRO: FIXED ANTI-RTO v5.9 AI SMART TURBO ⚡"
+	rawTitle := "⚡ GOLANG TUNNEL PRO: v6.0 ZERO-JITTER AI TURBO ACTIVE ⚡"
 	rawOwner := "👑 PRIVATE TUNNEL BY: DEDEFATHU 👑"
 	
 	paddingTitle := (66 - len(rawTitle)) / 2
@@ -192,7 +207,6 @@ func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 	turboTune(sshTarget)
 	defer sshTarget.Close()
 
-	// Pemotong sampah payload kotor lu tetep nangkring aman disini bos
 	if idx := bytes.Index(rawPayload, []byte("SSH-")); idx != -1 {
 		_, _ = sshTarget.Write(rawPayload[idx:])
 	}
@@ -210,10 +224,14 @@ func pipePure(client, target net.Conn, isWS bool) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Jalur A: HP -> SSH Server (AI DETECTOR + AUTOMATIC FRESH RECOVERY)
+	// Jalur A: HP -> SSH Server
 	go func() {
 		defer wg.Done()
-		buf := make([]byte, 65536)
+		
+		// Pinjam buffer dari Pool biar gak bikin sampah memori baru
+		buf := bufferPool.Get().([]byte)
+		defer bufferPool.Put(buf) // Kembalikan setelah selesai koneksi
+		
 		sshHandshakeFound := false
 		
 		for {
@@ -225,9 +243,7 @@ func pipePure(client, target net.Conn, isWS bool) {
 
 			n, err := client.Read(buf)
 			if err != nil {
-				// 🧠 Jika terjadi timeout / putus sebelum handshake SSH beres, laporkan ke AI Tracker
 				if isWS && !sshHandshakeFound {
-					// Jika sudah 5x berturut-turut stuck, paksa tidur 1 detik untuk membersihkan jalur
 					if checkSmartRecovery(client.RemoteAddr().String(), true) {
 						time.Sleep(1 * time.Second) 
 					}
@@ -242,8 +258,6 @@ func pipePure(client, target net.Conn, isWS bool) {
 					data = data[idx:]
 					sshHandshakeFound = true
 					client.SetReadDeadline(time.Time{})
-					
-					// 🧠 Berhasil konek bersih! Reset tracker kecerdasan ke 0
 					checkSmartRecovery(client.RemoteAddr().String(), false)
 				} else {
 					continue 
@@ -258,10 +272,14 @@ func pipePure(client, target net.Conn, isWS bool) {
 		once.Do(closeAll)
 	}()
 
-	// Jalur B: SSH Server -> HP (Full Speed Download + Heartbeat Engine)
+	// Jalur B: SSH Server -> HP
 	go func() {
 		defer wg.Done()
-		buf := make([]byte, 65536)
+		
+		// Pinjam buffer dari Pool untuk download speed los maksimal
+		buf := bufferPool.Get().([]byte)
+		defer bufferPool.Put(buf)
+		
 		for {
 			target.SetReadDeadline(time.Now().Add(20 * time.Second))
 			n, err := target.Read(buf)
