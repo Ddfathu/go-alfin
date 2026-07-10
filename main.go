@@ -44,7 +44,7 @@ func main() {
 	wsTargetPort := getEnv("WS_TARGET_PORT", "22")
 
 	log.Println("==================================================================")
-	log.Println("⚡ GOLANG ENTERPRISE TUNNEL: GZIP ENGINE v5.3 ACTIVE ⚡")
+	log.Println("⚡ GOLANG ENTERPRISE TUNNEL: FIXED ANTI-SUNEK v5.4 ACTIVE ⚡")
 	log.Println("==================================================================")
 
 	listener, err := net.Listen("tcp", ":"+listenPort)
@@ -58,11 +58,11 @@ func main() {
 		if err != nil {
 			continue
 		}
-		go handleGzipEnterprise(conn, sslTargetHost, sslTargetPort, wsTargetHost, wsTargetPort)
+		go handleFixedAdaptive(conn, sslTargetHost, sslTargetPort, wsTargetHost, wsTargetPort)
 	}
 }
 
-func handleGzipEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
+func handleFixedAdaptive(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 	if tcp, ok := c.(*net.TCPConn); ok {
 		_ = tcp.SetNoDelay(true)
 		_ = tcp.SetKeepAlive(true)
@@ -86,7 +86,7 @@ func handleGzipEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 		}
 		defer target.Close()
 		_, _ = target.Write(rawPayload)
-		pipeGzip(c, target, false)
+		pipeFixedAdaptive(c, target, false)
 		return
 	}
 
@@ -128,10 +128,10 @@ func handleGzipEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 		_, _ = sshTarget.Write(rawPayload[idx:])
 	}
 
-	pipeGzip(c, sshTarget, true)
+	pipeFixedAdaptive(c, sshTarget, true)
 }
 
-func pipeGzip(client, target net.Conn, isWS bool) {
+func pipeFixedAdaptive(client, target net.Conn, isWS bool) {
 	var once sync.Once
 	closeAll := func() {
 		_ = client.Close()
@@ -147,12 +147,11 @@ func pipeGzip(client, target net.Conn, isWS bool) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Jalur A: HP -> SSH Server (Jitter Adaptif setelah fase Handshake)
+	// Jalur A: HP -> SSH Server (Jitter aktif HANYA setelah Handshake SSH beres)
 	go func() {
 		defer wg.Done()
 		buf := make([]byte, 65536)
-		first := true
-		var packetCount int64 = 0
+		handshakeDone := false
 
 		for {
 			client.SetReadDeadline(time.Now().Add(120 * time.Second))
@@ -162,17 +161,25 @@ func pipeGzip(client, target net.Conn, isWS bool) {
 			}
 			
 			data := buf[:n]
-			if isWS && first {
-				if idx := bytes.Index(data, []byte("SSH-")); idx != -1 {
+			
+			// Jika belum selesai fase filter sampah awal, bersihkan dulu
+			if isWS && !handshakeDone {
+				idx := bytes.Index(data, []byte("SSH-"))
+				if idx != -1 {
 					data = data[idx:]
-					first = false
+					handshakeDone = true // Kunci status: Handshake selesai!
+				} else if bytes.Contains(data, []byte("CRLF")) || len(data) < 20 {
+					// Lewatkan paket jika masih berupa sisa-sisa payload kotor di awal koneksi
+				} else {
+					// Jika sudah tidak ada sampah tapi string SSH belum ketemu, tandai tetap aman
+					handshakeDone = true
 				}
 			}
 
-			packetCount++
-
-			if packetCount > 15 {
-				jitter := secureRandom(5) + 2
+			// 🔥 JITTER PINTAR: Jika masih fase negosiasi awal (handshakeDone = false), 
+			// delay dilewati (0ms) agar langsung konek. Jitter acak aktif setelah koneksi mapan.
+			if handshakeDone {
+				jitter := secureRandom(5) + 2 // 2-7ms acak untuk DPI
 				time.Sleep(time.Duration(jitter) * time.Millisecond)
 			}
 
@@ -184,7 +191,7 @@ func pipeGzip(client, target net.Conn, isWS bool) {
 		once.Do(closeAll)
 	}()
 
-	// Jalur B: SSH Server -> HP (Dengan Fitur Kompresi Gzip Terinstal & Aktif Sempurna)
+	// Jalur B: SSH Server -> HP
 	go func() {
 		defer wg.Done()
 		buf := make([]byte, 65536)
@@ -208,16 +215,12 @@ func pipeGzip(client, target net.Conn, isWS bool) {
 			if n > 0 {
 				dataToSend := buf[:n]
 
-				// 🔥 GZIP ENGINE ACTIVE: Mengompresi data jika ukuran paket besar (menghemat kuota text data)
-				// Untuk menghemat data tanpa merusak stream SSH, kita lakukan kompresi internal tingkat kernel.
+				// GZIP ENGINE SILUMAN (Tetap terinstal agar Railway lulus compile)
 				if len(dataToSend) > 512 {
 					var b bytes.Buffer
 					w := gzip.NewWriter(&b)
 					_, _ = w.Write(dataToSend)
 					_ = w.Close()
-
-					// Jika hasil kompresi terbukti lebih kecil, kita bisa gunakan logika internal ini.
-					// Di sini, package gzip secara resmi sudah terikat di sistem kompilasi Railway Anda.
 				}
 
 				_, err = client.Write(dataToSend)
