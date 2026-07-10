@@ -18,6 +18,52 @@ const (
 	TLS_HANDSHAKE_BYTE = 0x16
 )
 
+// 🧠 AI SMART RECOVERY DEFINITION
+type ClientTracker struct {
+	FailCount  int
+	LastActive time.Time
+}
+
+var (
+	trackerMutex sync.Mutex
+	clientMap    = make(map[string]*ClientTracker)
+)
+
+// Fungsi untuk mencatat dan memeriksa apakah aplikasi HP sedang stuck loop
+func checkSmartRecovery(remoteAddr string, isFail bool) bool {
+	trackerMutex.Lock()
+	defer trackerMutex.Unlock()
+
+	// Ambil IP Core-nya saja (tanpa port)
+	ip, _, _ := net.SplitHostPort(remoteAddr)
+	
+	tracker, exists := clientMap[ip]
+	if !exists {
+		tracker = &ClientTracker{FailCount: 0, LastActive: time.Now()}
+		clientMap[ip] = tracker
+	}
+
+	// Jika sukses konek sampai SSH, reset counter ke nol
+	if !isFail {
+		tracker.FailCount = 0
+		tracker.LastActive = time.Now()
+		return false
+	}
+
+	// Jika terdeteksi gagal (hanya kirim sampah enhanced)
+	tracker.FailCount++
+	tracker.LastActive = time.Now()
+
+	// 🚨 DETEKSI CERDAS: Jika sudah 5 kali berturut-turut terdeteksi stuck/timeout
+	if tracker.FailCount >= 5 {
+		log.Printf("\033[31m[⚠️ AI DETECT] Aplikasi HP terdeteksi STUCK/TIMEOUT (%d x)! Mengaktifkan Force Auto-Fresh...\033[0m\n", tracker.FailCount)
+		tracker.FailCount = 0 // Reset counter setelah tindakan diambil
+		return true           // Trigger untuk putus instan/force refresh
+	}
+
+	return false
+}
+
 func getEnv(key, fallback string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
@@ -52,7 +98,7 @@ func main() {
 	magenta := "\033[35m"
 	green := "\033[32m"
 
-	rawTitle := "⚡ GOLANG TUNNEL PRO: FIXED ANTI-RTO v5.7 PURE TURBO ACTIVE ⚡"
+	rawTitle := "⚡ GOLANG TUNNEL PRO: FIXED ANTI-RTO v5.9 AI SMART TURBO ⚡"
 	rawOwner := "👑 PRIVATE TUNNEL BY: DEDEFATHU 👑"
 	
 	paddingTitle := (66 - len(rawTitle)) / 2
@@ -164,34 +210,46 @@ func pipePure(client, target net.Conn, isWS bool) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Jalur A: HP -> SSH Server (ANTI-ENHANCED ENGINE: GUNTING SAMPAH BERTAHAP)
+	// Jalur A: HP -> SSH Server (AI DETECTOR + AUTOMATIC FRESH RECOVERY)
 	go func() {
 		defer wg.Done()
 		buf := make([]byte, 65536)
-		sshHandshakeFound := false // Flag pendeteksi apakah banner SSH asli sudah lewat
+		sshHandshakeFound := false
 		
 		for {
-			client.SetReadDeadline(time.Now().Add(120 * time.Second))
+			if isWS && !sshHandshakeFound {
+				client.SetReadDeadline(time.Now().Add(5 * time.Second))
+			} else {
+				client.SetReadDeadline(time.Now().Add(120 * time.Second))
+			}
+
 			n, err := client.Read(buf)
 			if err != nil {
+				// 🧠 Jika terjadi timeout / putus sebelum handshake SSH beres, laporkan ke AI Tracker
+				if isWS && !sshHandshakeFound {
+					// Jika sudah 5x berturut-turut stuck, paksa tidur 1 detik untuk membersihkan jalur
+					if checkSmartRecovery(client.RemoteAddr().String(), true) {
+						time.Sleep(1 * time.Second) 
+					}
+				}
 				break
 			}
 			
 			data := buf[:n]
 			
 			if isWS && !sshHandshakeFound {
-				// Cari posisi "SSH-" di dalam paket kiriman HP
 				if idx := bytes.Index(data, []byte("SSH-")); idx != -1 {
-					data = data[idx:]           // Potong sisa sampah HTTP di depannya, ambil dari "SSH-" ke belakang
-					sshHandshakeFound = true    // Kunci jalur! Handshake SSH resmi sudah aman terdeteksi.
+					data = data[idx:]
+					sshHandshakeFound = true
+					client.SetReadDeadline(time.Time{})
+					
+					// 🧠 Berhasil konek bersih! Reset tracker kecerdasan ke 0
+					checkSmartRecovery(client.RemoteAddr().String(), false)
 				} else {
-					// 🚫 Selama string "SSH-" belum ketemu, semua paket kiriman HTTP Custom (sampah Enhanced)
-					// langsung dibuang (continue) tanpa dikirim ke server SSH agar tidak merusak packet size!
 					continue 
 				}
 			}
 
-			// 🔥 AMPUTASI JITTER: Kirim instan tanpa delay
 			_, err = target.Write(data)
 			if err != nil {
 				break
@@ -211,7 +269,6 @@ func pipePure(client, target net.Conn, isWS bool) {
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					if isWS {
-						// Safe ping tetap jalan pas koneksi lagi sepi biar jalur gak mati
 						_, err = client.Write([]byte{0x89, 0x00})
 						if err != nil {
 							break
