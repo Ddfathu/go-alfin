@@ -2,12 +2,10 @@ package main
 
 import (
 	"bytes"
-	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base64"
 	"fmt"
 	"log"
-	"math/big"
 	"net"
 	"os"
 	"strings"
@@ -27,24 +25,16 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func secureRandom(max int64) int64 {
-	nBig, err := rand.Int(rand.Reader, big.NewInt(max))
-	if err != nil {
-		return 0
-	}
-	return nBig.Int64()
-}
-
-// 🚀 ENGINE TUNING: Optimasi Buffer Socket untuk Kcepatan Penuh
+// 🚀 ENGINE TUNING MAX: Pipa buffer diperlebar maksimal untuk kecepatan loss
 func turboTune(c net.Conn) {
 	if tcp, ok := c.(*net.TCPConn); ok {
 		_ = tcp.SetNoDelay(true)
 		_ = tcp.SetKeepAlive(true)
 		_ = tcp.SetKeepAlivePeriod(10 * time.Second)
 		
-		// Menaikkan ukuran buffer TCP Window OS secara agresif (Kunci Full Speed Download)
-		_ = tcp.SetReadBuffer(262144)  // 256 KB Buffer
-		_ = tcp.SetWriteBuffer(262144) // 256 KB Buffer
+		// Buffer 256KB agar tidak ada antrean paket di level OS Railway
+		_ = tcp.SetReadBuffer(262144)  
+		_ = tcp.SetWriteBuffer(262144) 
 	}
 }
 
@@ -55,9 +45,28 @@ func main() {
 	wsTargetHost := getEnv("WS_TARGET_HOST", "127.0.0.1")
 	wsTargetPort := getEnv("WS_TARGET_PORT", "22")
 
-	log.Println("==================================================================")
-	log.Println("🚀 GOLANG TUNNEL PRO: FIXED DPI DESTROYER v5.1 FULL SPEED ACTIVE 🔥")
-	log.Println("==================================================================")
+	// 🎨 ANSI COLOR & CENTER BANNER
+	reset := "\033[0m"
+	cyan := "\033[36m"
+	yellow := "\033[33m"
+	magenta := "\033[35m"
+	green := "\033[32m"
+
+	rawTitle := "⚡ GOLANG TUNNEL PRO: FIXED ANTI-RTO v5.5 PURE TURBO ACTIVE ⚡"
+	rawOwner := "👑 PRIVATE TUNNEL BY: DEDEFATHU 👑"
+	
+	paddingTitle := (66 - len(rawTitle)) / 2
+	paddingOwner := (66 - len(rawOwner)) / 2
+	
+	centerTitle := strings.Repeat(" ", paddingTitle) + rawTitle
+	centerOwner := strings.Repeat(" ", paddingOwner) + rawOwner
+
+	log.Println(cyan + "==================================================================" + reset)
+	log.Println(yellow + centerTitle + reset)
+	log.Println(magenta + centerOwner + reset)
+	log.Println(green + "==================================================================" + reset)
+	log.Printf(green+"[*] Engine listening smoothly on port: %s\n"+reset, listenPort)
+	log.Println(cyan + "==================================================================" + reset)
 
 	listener, err := net.Listen("tcp", ":"+listenPort)
 	if err != nil {
@@ -70,12 +79,12 @@ func main() {
 		if err != nil {
 			continue
 		}
-		go handleFixedEnterprise(conn, sslTargetHost, sslTargetPort, wsTargetHost, wsTargetPort)
+		go handlePureTurbo(conn, sslTargetHost, sslTargetPort, wsTargetHost, wsTargetPort)
 	}
 }
 
-func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
-	turboTune(c) // Optimasi koneksi client awal
+func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
+	turboTune(c) 
 	defer c.Close()
 
 	buf := make([]byte, 131072)
@@ -87,7 +96,7 @@ func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) 
 	c.SetReadDeadline(time.Time{})
 	rawPayload := buf[:n]
 
-	// SSL Detection
+	// Jalur SSL
 	if rawPayload[0] == TLS_HANDSHAKE_BYTE {
 		target, err := net.DialTimeout("tcp", sslHost+":"+sslPort, 4*time.Second)
 		if err != nil {
@@ -96,11 +105,11 @@ func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) 
 		turboTune(target)
 		defer target.Close()
 		_, _ = target.Write(rawPayload)
-		pipeFixed(c, target, false)
+		pipePure(c, target, false)
 		return
 	}
 
-	// Enhanced Payload Handshake
+	// Jalur WebSocket (Enhanced Payload)
 	reqStr := string(rawPayload)
 	wsKey := ""
 	for _, line := range strings.Split(reqStr, "\r\n") {
@@ -129,7 +138,7 @@ func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) 
 		return
 	}
 
-	// Konek ke SSH
+	// Hubungkan ke SSH Internal
 	sshTarget, err := net.DialTimeout("tcp", wsHost+":"+wsPort, 4*time.Second)
 	if err != nil {
 		return
@@ -137,14 +146,15 @@ func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) 
 	turboTune(sshTarget)
 	defer sshTarget.Close()
 
+	// Pemotong sampah payload kotor lu tetep nangkring aman disini bos
 	if idx := bytes.Index(rawPayload, []byte("SSH-")); idx != -1 {
 		_, _ = sshTarget.Write(rawPayload[idx:])
 	}
 
-	pipeFixed(c, sshTarget, true)
+	pipePure(c, sshTarget, true)
 }
 
-func pipeFixed(client, target net.Conn, isWS bool) {
+func pipePure(client, target net.Conn, isWS bool) {
 	var once sync.Once
 	closeAll := func() {
 		_ = client.Close()
@@ -154,7 +164,7 @@ func pipeFixed(client, target net.Conn, isWS bool) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Jalur A: HP -> SSH Server (Dengan Anti-DPI Jittering Super Halus)
+	// Jalur A: HP -> SSH Server (LOSS TANPA JITTER - ANTI RTO)
 	go func() {
 		defer wg.Done()
 		buf := make([]byte, 65536)
@@ -174,10 +184,7 @@ func pipeFixed(client, target net.Conn, isWS bool) {
 				}
 			}
 
-			// 🔥 FULL SPEED ADJUSTMENT: Jitter diperkecil ke 1-4ms agar upload secepat kilat tapi DPI tetap buta
-			jitter := secureRandom(4) + 1 
-			time.Sleep(time.Duration(jitter) * time.Millisecond)
-
+			// 🔥 AMPUTASI JITTER: time.Sleep dibuang total agar pengiriman paket instant kilat!
 			_, err = target.Write(data)
 			if err != nil {
 				break
@@ -186,7 +193,7 @@ func pipeFixed(client, target net.Conn, isWS bool) {
 		once.Do(closeAll)
 	}()
 
-	// Jalur B: SSH Server -> HP (Anti-RTO & Full Speed Download Tanpa Batas)
+	// Jalur B: SSH Server -> HP (Full Speed Download + Heartbeat Engine)
 	go func() {
 		defer wg.Done()
 		buf := make([]byte, 65536)
@@ -197,6 +204,7 @@ func pipeFixed(client, target net.Conn, isWS bool) {
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					if isWS {
+						// Safe ping tetap jalan pas koneksi lagi sepi biar jalur gak mati
 						_, err = client.Write([]byte{0x89, 0x00})
 						if err != nil {
 							break
