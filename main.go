@@ -28,7 +28,7 @@ func main() {
 	wsTargetPort := getEnv("WS_TARGET_PORT", "22")
 
 	log.Println("==================================================================")
-	log.Println("🔥 GOLANG ENTERPRISE TUNNEL ACTIVE: DPI DESTROYER ENGINE v5.0 🔥")
+	log.Println("🔥 GOLANG ENTERPRISE TUNNEL: FIXED DPI DESTROYER v5.1 ACTIVE 🔥")
 	log.Println("==================================================================")
 
 	listener, err := net.Listen("tcp", ":"+listenPort)
@@ -42,11 +42,10 @@ func main() {
 		if err != nil {
 			continue
 		}
-		go handleEnterprise(conn, sslTargetHost, sslTargetPort, wsTargetHost, wsTargetPort)
+		go handleFixedEnterprise(conn, sslTargetHost, sslTargetPort, wsTargetHost, wsTargetPort)
 	}
 }
 
-// Fungsi helper untuk generate angka acak yang aman secara kriptografi
 func secureRandom(max int64) int64 {
 	nBig, err := rand.Int(rand.Reader, big.NewInt(max))
 	if err != nil {
@@ -55,16 +54,16 @@ func secureRandom(max int64) int64 {
 	return nBig.Int64()
 }
 
-func handleEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
+func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 	if tcp, ok := c.(*net.TCPConn); ok {
 		_ = tcp.SetNoDelay(true)
 		_ = tcp.SetKeepAlive(true)
-		_ = tcp.SetKeepAlivePeriod(10 * time.Second) // Sangat agresif agar tidak mati di BTS
+		_ = tcp.SetKeepAlivePeriod(10 * time.Second)
 	}
 	defer c.Close()
 
-	// Dialokasikan buffer besar per user demi performa manipulasi byte yang leluasa
-	buf := make([]byte, 131072) // 128 KB Buffer raksasa
+	// 🕒 MODE RAKUS: Tetap nangkring dengan buffer 128KB
+	buf := make([]byte, 131072)
 
 	c.SetReadDeadline(time.Now().Add(4 * time.Second))
 	n, err := c.Read(buf)
@@ -74,7 +73,7 @@ func handleEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 	c.SetReadDeadline(time.Time{})
 	rawPayload := buf[:n]
 
-	// 🛡️ DETEKSI JALUR SSL / SNI
+	// SSL Detection
 	if rawPayload[0] == TLS_HANDSHAKE_BYTE {
 		target, err := net.DialTimeout("tcp", sslHost+":"+sslPort, 4*time.Second)
 		if err != nil {
@@ -82,11 +81,11 @@ func handleEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 		}
 		defer target.Close()
 		_, _ = target.Write(rawPayload)
-		pipeEnterprise(c, target, false)
+		pipeFixed(c, target, false)
 		return
 	}
 
-	// 🌐 MODE ENHANCED PAYLOAD OBFUSCATION (WEBSOCKET)
+	// Enhanced Payload Handshake
 	reqStr := string(rawPayload)
 	wsKey := ""
 	for _, line := range strings.Split(reqStr, "\r\n") {
@@ -115,22 +114,22 @@ func handleEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 		return
 	}
 
-	// Konek ke SSH Server Internal
+	// Konek ke SSH
 	sshTarget, err := net.DialTimeout("tcp", wsHost+":"+wsPort, 4*time.Second)
 	if err != nil {
 		return
 	}
 	defer sshTarget.Close()
 
-	// Ekstrak data SSH asli dari timbunan payload kotor
+	// ✂️ Pemotong sampah payload bawaan lu tetap nangkring aman
 	if idx := bytes.Index(rawPayload, []byte("SSH-")); idx != -1 {
 		_, _ = sshTarget.Write(rawPayload[idx:])
 	}
 
-	pipeEnterprise(c, sshTarget, true)
+	pipeFixed(c, sshTarget, true)
 }
 
-func pipeEnterprise(client, target net.Conn, isWS bool) {
+func pipeFixed(client, target net.Conn, isWS bool) {
 	var once sync.Once
 	closeAll := func() {
 		_ = client.Close()
@@ -143,11 +142,10 @@ func pipeEnterprise(client, target net.Conn, isWS bool) {
 		_ = tcp.SetKeepAlivePeriod(10 * time.Second)
 	}
 
-	// 🟢 JALUR A: HP (Client) -> Server SSH (Dengan Anti-DPI Timing & Scrambling)
+	// Jalur A: HP -> SSH Server (Dengan Anti-DPI Jittering Milidetik)
 	go func() {
 		buf := make([]byte, 65536)
 		first := true
-		
 		for {
 			client.SetReadDeadline(time.Now().Add(120 * time.Second))
 			n, err := client.Read(buf)
@@ -163,9 +161,8 @@ func pipeEnterprise(client, target net.Conn, isWS bool) {
 				}
 			}
 
-			// 🧠 ANTI-DPI LOGIC 1: Micro-Jitter & Time Delay Simulation
-			// Jeda acak 2-8 milidetik disuntikkan untuk mengacaukan AI Operator yang membaca pola ketukan paket
-			jitter := secureRandom(7) + 2
+			// 🔥 ANTI-DPI LOGIC 1: Micro-Jitter (Aman & Tidak Merusak Koneksi)
+			jitter := secureRandom(6) + 2 // Delay acak 2-8ms buat ngacak pola deteksi AI operator
 			time.Sleep(time.Duration(jitter) * time.Millisecond)
 
 			_, err = target.Write(data)
@@ -176,29 +173,18 @@ func pipeEnterprise(client, target net.Conn, isWS bool) {
 		once.Do(closeAll)
 	}()
 
-	// 🔴 JALUR B: Server SSH -> HP (Dengan Dynamic Padding & Fake Traffic/Chaffing)
+	// Jalur B: SSH Server -> HP (Anti-RTO & Safe Heartbeat)
 	buf := make([]byte, 65536)
 	for {
-		// Set waktu tunggu 15 detik. Jika lewat, kita suntik fake traffic.
-		target.SetReadDeadline(time.Now().Add(15 * time.Second))
+		target.SetReadDeadline(time.Now().Add(20 * time.Second))
 		n, err := target.Read(buf)
 		
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				if isWS {
-					// 🧠 ANTI-DPI LOGIC 2: Chaffing Engine (Fake Traffic Injection)
-					// Selain kirim opcode ping murni (0x89), kita kirim payload 'kosong' dengan ukuran acak (10-60 byte)
-					// Langkah ini membuat DPI mengira ada traffic web interaktif yang sedang mengalir
-					fakeSize := secureRandom(50) + 10
-					fakePayload := make([]byte, fakeSize)
-					_, _ = rand.Read(fakePayload) // Isi dengan byte acak tingkat entropi tinggi
-
-					// Bungkus dalam format frame teks WebSocket palsu (Opcode 0x01 atau Ping 0x89)
-					_, err = client.Write([]byte{0x89, byte(fakeSize)})
-					if err == nil {
-						_, err = client.Write(fakePayload)
-					}
-					
+					// 🔥 ANTI-DPI LOGIC 2: Safe WebSocket Heartbeat
+					// Kirim opcode 0x89 tanpa payload tambahan agar DarkTunnel paham dan jalur tetap hidup
+					_, err = client.Write([]byte{0x89, 0x00})
 					if err != nil {
 						break
 					}
@@ -209,43 +195,12 @@ func pipeEnterprise(client, target net.Conn, isWS bool) {
 		}
 		
 		if n > 0 {
-			dataToSend := buf[:n]
-
-			// 🧠 ANTI-DPI LOGIC 3: Dynamic Packet Padding (Morphing Size)
-			// Jika mendeteksi paket berukuran kecil (rentan dianalisis DPI), kita tambah padding acak di akhir frame
-			if isWS && n < 200 {
-				paddingSize := secureRandom(64) + 16 // Tambah 16-80 byte acak
-				padding := make([]byte, paddingSize)
-				_, _ = rand.Read(padding)
-				
-				// Kirim data asli
-				_, err = client.Write(dataToSend)
-				if err != nil {
-					break
-				}
-				// Kirim data padding sebagai frame berkelanjutan (Continuation Frame - Opcode 0x00)
-				_, err = client.Write([]byte{0x00, byte(paddingSize)})
-				if err == nil {
-					_, err = client.Write(padding)
-				}
-				if err != nil {
-					break
-				}
-			} else {
-				// Jalur normal untuk paket besar (seperti streaming/download)
-				_, err = client.Write(dataToSend)
-				if err != nil {
-					break
-				}
+			// Mengirimkan data stream SSH murni ke DarkTunnel tanpa dipecah-pecah (DIJAMIN KONEK)
+			_, err = client.Write(buf[:n])
+			if err != nil {
+				break
 			}
 		}
 	}
 	once.Do(closeAll)
-}
-
-func getEnv(key, fallback string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return fallback
 }
