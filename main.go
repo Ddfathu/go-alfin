@@ -52,7 +52,7 @@ func main() {
 	magenta := "\033[35m"
 	green := "\033[32m"
 
-	rawTitle := "⚡ GOLANG TUNNEL PRO: FIXED ANTI-RTO v5.6 PURE TURBO ACTIVE ⚡"
+	rawTitle := "⚡ GOLANG TUNNEL PRO: FIXED ANTI-RTO v5.7 PURE TURBO ACTIVE ⚡"
 	rawOwner := "👑 PRIVATE TUNNEL BY: DEDEFATHU 👑"
 	
 	paddingTitle := (66 - len(rawTitle)) / 2
@@ -164,11 +164,12 @@ func pipePure(client, target net.Conn, isWS bool) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Jalur A: HP -> SSH Server (LOSS TANPA JITTER - ANTI RTO + FILTER SISA SAMPAH PAYLOAD)
+	// Jalur A: HP -> SSH Server (ANTI-ENHANCED ENGINE: GUNTING SAMPAH BERTAHAP)
 	go func() {
 		defer wg.Done()
 		buf := make([]byte, 65536)
-		first := true
+		sshHandshakeFound := false // Flag pendeteksi apakah banner SSH asli sudah lewat
+		
 		for {
 			client.SetReadDeadline(time.Now().Add(120 * time.Second))
 			n, err := client.Read(buf)
@@ -177,18 +178,20 @@ func pipePure(client, target net.Conn, isWS bool) {
 			}
 			
 			data := buf[:n]
-			if isWS && first {
-				first = false // Langsung matikan status first pada pembacaan awal agar tidak lolos ke loop berikutnya
+			
+			if isWS && !sshHandshakeFound {
+				// Cari posisi "SSH-" di dalam paket kiriman HP
 				if idx := bytes.Index(data, []byte("SSH-")); idx != -1 {
-					data = data[idx:]
+					data = data[idx:]           // Potong sisa sampah HTTP di depannya, ambil dari "SSH-" ke belakang
+					sshHandshakeFound = true    // Kunci jalur! Handshake SSH resmi sudah aman terdeteksi.
 				} else {
-					// 🚫 Jika paket pertama di loop ini murni sampah HTTP kotor (tidak ada kata "SSH-"),
-					// langsung dibuang total agar tidak merusak kalkulasi packet size di SSH server!
+					// 🚫 Selama string "SSH-" belum ketemu, semua paket kiriman HTTP Custom (sampah Enhanced)
+					// langsung dibuang (continue) tanpa dikirim ke server SSH agar tidak merusak packet size!
 					continue 
 				}
 			}
 
-			// 🔥 AMPUTASI JITTER: pengiriman instan tanpa time.Sleep
+			// 🔥 AMPUTASI JITTER: Kirim instan tanpa delay
 			_, err = target.Write(data)
 			if err != nil {
 				break
