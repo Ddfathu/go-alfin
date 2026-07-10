@@ -20,7 +20,6 @@ const (
 	TLS_HANDSHAKE_BYTE = 0x16
 )
 
-// Pindahin fungsi getEnv ke atas biar dibaca duluan sama compiler Go
 func getEnv(key, fallback string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
@@ -36,6 +35,19 @@ func secureRandom(max int64) int64 {
 	return nBig.Int64()
 }
 
+// 🚀 ENGINE TUNING: Optimasi Buffer Socket untuk Kcepatan Penuh
+func turboTune(c net.Conn) {
+	if tcp, ok := c.(*net.TCPConn); ok {
+		_ = tcp.SetNoDelay(true)
+		_ = tcp.SetKeepAlive(true)
+		_ = tcp.SetKeepAlivePeriod(10 * time.Second)
+		
+		// Menaikkan ukuran buffer TCP Window OS secara agresif (Kunci Full Speed Download)
+		_ = tcp.SetReadBuffer(262144)  // 256 KB Buffer
+		_ = tcp.SetWriteBuffer(262144) // 256 KB Buffer
+	}
+}
+
 func main() {
 	listenPort := getEnv("PORT", "8080")
 	sslTargetHost := getEnv("SSL_TARGET_HOST", "127.0.0.1")
@@ -44,7 +56,7 @@ func main() {
 	wsTargetPort := getEnv("WS_TARGET_PORT", "22")
 
 	log.Println("==================================================================")
-	log.Println("🔥 GOLANG ENTERPRISE TUNNEL: FIXED DPI DESTROYER v5.1 ACTIVE 🔥")
+	log.Println("🚀 GOLANG TUNNEL PRO: FIXED DPI DESTROYER v5.1 FULL SPEED ACTIVE 🔥")
 	log.Println("==================================================================")
 
 	listener, err := net.Listen("tcp", ":"+listenPort)
@@ -63,16 +75,10 @@ func main() {
 }
 
 func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
-	if tcp, ok := c.(*net.TCPConn); ok {
-		_ = tcp.SetNoDelay(true)
-		_ = tcp.SetKeepAlive(true)
-		_ = tcp.SetKeepAlivePeriod(10 * time.Second)
-	}
+	turboTune(c) // Optimasi koneksi client awal
 	defer c.Close()
 
-	// 🕒 MODE RAKUS: Tetap nangkring dengan buffer 128KB
 	buf := make([]byte, 131072)
-
 	c.SetReadDeadline(time.Now().Add(4 * time.Second))
 	n, err := c.Read(buf)
 	if err != nil || n == 0 {
@@ -87,6 +93,7 @@ func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) 
 		if err != nil {
 			return
 		}
+		turboTune(target)
 		defer target.Close()
 		_, _ = target.Write(rawPayload)
 		pipeFixed(c, target, false)
@@ -127,9 +134,9 @@ func handleFixedEnterprise(c net.Conn, sslHost, sslPort, wsHost, wsPort string) 
 	if err != nil {
 		return
 	}
+	turboTune(sshTarget)
 	defer sshTarget.Close()
 
-	// ✂️ Pemotong sampah payload bawaan lu tetap nangkring aman
 	if idx := bytes.Index(rawPayload, []byte("SSH-")); idx != -1 {
 		_, _ = sshTarget.Write(rawPayload[idx:])
 	}
@@ -144,14 +151,12 @@ func pipeFixed(client, target net.Conn, isWS bool) {
 		_ = target.Close()
 	}
 
-	if tcp, ok := target.(*net.TCPConn); ok {
-		_ = tcp.SetNoDelay(true)
-		_ = tcp.SetKeepAlive(true)
-		_ = tcp.SetKeepAlivePeriod(10 * time.Second)
-	}
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	// Jalur A: HP -> SSH Server (Dengan Anti-DPI Jittering Milidetik)
+	// Jalur A: HP -> SSH Server (Dengan Anti-DPI Jittering Super Halus)
 	go func() {
+		defer wg.Done()
 		buf := make([]byte, 65536)
 		first := true
 		for {
@@ -169,8 +174,8 @@ func pipeFixed(client, target net.Conn, isWS bool) {
 				}
 			}
 
-			// 🔥 ANTI-DPI LOGIC 1: Micro-Jitter
-			jitter := secureRandom(6) + 2 // Delay acak 2-8ms buat ngacak pola deteksi AI operator
+			// 🔥 FULL SPEED ADJUSTMENT: Jitter diperkecil ke 1-4ms agar upload secepat kilat tapi DPI tetap buta
+			jitter := secureRandom(4) + 1 
 			time.Sleep(time.Duration(jitter) * time.Millisecond)
 
 			_, err = target.Write(data)
@@ -181,32 +186,36 @@ func pipeFixed(client, target net.Conn, isWS bool) {
 		once.Do(closeAll)
 	}()
 
-	// Jalur B: SSH Server -> HP (Anti-RTO & Safe Heartbeat)
-	buf := make([]byte, 65536)
-	for {
-		target.SetReadDeadline(time.Now().Add(20 * time.Second))
-		n, err := target.Read(buf)
-		
-		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				if isWS {
-					// 🔥 ANTI-DPI LOGIC 2: Safe WebSocket Heartbeat
-					_, err = client.Write([]byte{0x89, 0x00})
-					if err != nil {
-						break
-					}
-					continue
-				}
-			}
-			break
-		}
-		
-		if n > 0 {
-			_, err = client.Write(buf[:n])
+	// Jalur B: SSH Server -> HP (Anti-RTO & Full Speed Download Tanpa Batas)
+	go func() {
+		defer wg.Done()
+		buf := make([]byte, 65536)
+		for {
+			target.SetReadDeadline(time.Now().Add(20 * time.Second))
+			n, err := target.Read(buf)
+			
 			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					if isWS {
+						_, err = client.Write([]byte{0x89, 0x00})
+						if err != nil {
+							break
+						}
+						continue
+					}
+				}
 				break
 			}
+			
+			if n > 0 {
+				_, err = client.Write(buf[:n])
+				if err != nil {
+					break
+				}
+			}
 		}
-	}
-	once.Do(closeAll)
+		once.Do(closeAll)
+	}()
+
+	wg.Wait()
 }
