@@ -41,7 +41,10 @@ echo -e "\e[1;36m=================================================\e[0m"
 EOF
 chmod +x /etc/profile.d/99-respon-server.sh
 
-echo "[*] Membuat Konfigurasi sshd_config Turbo (ANTI-SUNEK & FULL SPEED)..."
+# =====================================================================
+# 🛠️ BAGIAN YANG DIGANTI: SUNTIKAN ANTI-EOF & MAX CONFIG UNTUK TETHERING
+# =====================================================================
+echo "[*] Membuat Konfigurasi sshd_config Turbo (SPEK BADAK ANTI-EOF)..."
 cat << 'EOF' > /etc/ssh/sshd_config
 Port 22
 ListenAddress 127.0.0.1
@@ -55,18 +58,23 @@ Banner /etc/ssh_banner
 AcceptEnv LANG LC_*
 Subsystem sftp /usr/lib/ssh/sftp-server
 
-# 🔥 SUNTIKAN SAKTI ANTI-REKONEK: Jaga Pipa Data Tetap Terbuka Agresif
-ClientAliveInterval 10
+# 🚀 RACIKAN ULTRA SAKTI ANTI-EOF (Siap dihajar spam koneksi tethering brutal)
+MaxStartups 100:30:500
+MaxSessions 100
+MaxAuthTries 10
+
+# 🔥 SUNTIKAN SAKTI ANTI-REKONEK (Diselaraskan dengan Script Go v6.0)
+ClientAliveInterval 30
 ClientAliveCountMax 99999
 TCPKeepAlive yes
-LoginGraceTime 0
+LoginGraceTime 30
 
 # 🚀 RACIKAN MULTI-ENKRIPSI: Sekali Klik Langsung Konek + Speed Tetap Mentok Kanan
-# Menaruh cipher ringan di paling depan (kiri) agar diprioritaskan saat HP lu support
 Ciphers aes128-gcm@openssh.com,aes256-gcm@openssh.com,chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-cbc,3des-cbc
 KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1
 MACs umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha1,hmac-sha1-96
 EOF
+# =====================================================================
 
 echo "[*] Mengonfigurasi User SSH..."
 if ! id "$USER_NAME" &>/dev/null; then
@@ -131,7 +139,6 @@ reset="\e[0m"
 rawTitle="⚡ GOLANG TUNNEL PRO: FIXED DPI DESTROYER v5.1 FULL SPEED ACTIVE ⚡"
 rawOwner="👑 PRIVATE TUNNEL BY: DEDEFATHU 👑"
 
-# Menghitung padding agar teks otomatis berada di tengah pembatas 66 karakter
 paddingTitle=$(( (66 - ${#rawTitle}) / 2 ))
 paddingOwner=$(( (66 - ${#rawOwner}) / 2 ))
 
