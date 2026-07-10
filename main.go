@@ -52,7 +52,7 @@ func main() {
 	magenta := "\033[35m"
 	green := "\033[32m"
 
-	rawTitle := "⚡ GOLANG TUNNEL PRO: FIXED ANTI-RTO v5.5 PURE TURBO ACTIVE ⚡"
+	rawTitle := "⚡ GOLANG TUNNEL PRO: FIXED ANTI-RTO v5.6 PURE TURBO ACTIVE ⚡"
 	rawOwner := "👑 PRIVATE TUNNEL BY: DEDEFATHU 👑"
 	
 	paddingTitle := (66 - len(rawTitle)) / 2
@@ -164,7 +164,7 @@ func pipePure(client, target net.Conn, isWS bool) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Jalur A: HP -> SSH Server (LOSS TANPA JITTER - ANTI RTO)
+	// Jalur A: HP -> SSH Server (LOSS TANPA JITTER - ANTI RTO + FILTER SISA SAMPAH PAYLOAD)
 	go func() {
 		defer wg.Done()
 		buf := make([]byte, 65536)
@@ -178,13 +178,17 @@ func pipePure(client, target net.Conn, isWS bool) {
 			
 			data := buf[:n]
 			if isWS && first {
+				first = false // Langsung matikan status first pada pembacaan awal agar tidak lolos ke loop berikutnya
 				if idx := bytes.Index(data, []byte("SSH-")); idx != -1 {
 					data = data[idx:]
-					first = false
+				} else {
+					// 🚫 Jika paket pertama di loop ini murni sampah HTTP kotor (tidak ada kata "SSH-"),
+					// langsung dibuang total agar tidak merusak kalkulasi packet size di SSH server!
+					continue 
 				}
 			}
 
-			// 🔥 AMPUTASI JITTER: time.Sleep dibuang total agar pengiriman paket instant kilat!
+			// 🔥 AMPUTASI JITTER: pengiriman instan tanpa time.Sleep
 			_, err = target.Write(data)
 			if err != nil {
 				break
