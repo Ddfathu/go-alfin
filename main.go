@@ -78,9 +78,9 @@ func turboTune(c net.Conn) {
 		_ = tcp.SetKeepAlive(true)
 		_ = tcp.SetKeepAlivePeriod(10 * time.Second)
 		
-		// Buffer 256KB agar tidak ada antrean paket di level OS Railway
-		_ = tcp.SetReadBuffer(262144)  
-		_ = tcp.SetWriteBuffer(262144) 
+		// Buffer 256KB 262144 agar tidak ada antrean paket di level OS Railway
+		_ = tcp.SetReadBuffer(524288)  
+		_ = tcp.SetWriteBuffer(524288) 
 	}
 }
 
