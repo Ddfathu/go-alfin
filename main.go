@@ -8,304 +8,271 @@ import (
 	"log"
 	"net"
 	"os"
-	"runtime"
-	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-const (
-	WS_MAGIC           = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-	TLS_HANDSHAKE_BYTE = 0x16
-)
-
-// 🧠 AI SMART RECOVERY DEFINITION
-type ClientTracker struct {
-	FailCount  int
-	LastActive time.Time
-}
-
 var (
-	trackerMutex sync.Mutex
-	clientMap    = make(map[string]*ClientTracker)
+	LISTEN_PORT      = getEnvInt("PORT", 8080)
+	SSL_TARGET_HOST  = getEnvStr("SSL_TARGET_HOST", "127.0.0.1")
+	SSL_TARGET_PORT  = getEnvInt("SSL_TARGET_PORT", 2443)
+	SSH_TARGET_PORT  = getEnvInt("WS_TARGET_PORT", 22)
 )
 
-// 🔄 ZERO-JITTER BUFFER POOL: Daur ulang memori agar Go gak usah "bersih-bersih" mendadak
-var bufferPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 65536)
-	},
+const (
+	WS_MAGIC            = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+	DEFAULT_RESPONSE    = "HTTP/1.1 101 Switching Protocols\r\n\r\n"
+	TLS_HANDSHAKE_BYTE = 0x16
+	BUFFER_SIZE         = 1024 * 1024 // 1MB Buffer
+)
+
+func main() {
+	listenAddr := fmt.Sprintf("0.0.0.0:%d", LISTEN_PORT)
+	listener, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		log.Fatalf("Gagal menjalankan server: %v", err)
+	}
+	defer listener.Close()
+
+	fmt.Printf("[monster-mux-go] ALL-IN-ONE FIXED ELITE v7.7 ACTIVE on Port: %d 🚀\n", LISTEN_PORT)
+
+	for {
+		clientConn, err := listener.Accept()
+		if err != nil {
+			continue
+		}
+		// Jalankan per koneksi di dalam Goroutine terpisah (Multi-thread otomatis)
+		go handleConnection(clientConn)
+	}
 }
 
-func checkSmartRecovery(remoteAddr string, isFail bool) bool {
-	trackerMutex.Lock()
-	defer trackerMutex.Unlock()
-
-	ip, _, _ := net.SplitHostPort(remoteAddr)
-	
-	tracker, exists := clientMap[ip]
-	if !exists {
-		tracker = &ClientTracker{FailCount: 0, LastActive: time.Now()}
-		clientMap[ip] = tracker
+func handleConnection(clientConn net.Conn) {
+	// Optimasi TCP Socket biar persis setNoDelay & setKeepAlive di Node.js
+	if tcpConn, ok := clientConn.(*net.TCPConn); ok {
+		tcpConn.SetNoDelay(true)
+		tcpConn.SetKeepAlive(true)
+		tcpConn.SetKeepAlivePeriod(30 * time.幼稚Second)
 	}
 
-	if !isFail {
-		tracker.FailCount = 0
-		tracker.LastActive = time.Now()
-		return false
+	var targetConn net.Conn
+	var err error
+	var mu sync.Mutex
+
+	isWsJalur := false
+	firstPacketRead := false
+	packetCounter := 0
+	backendReady := false
+	var queueBuffers [][]byte
+
+	closeAll := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if clientConn != nil {
+			clientConn.Close()
+		}
+		if targetConn != nil {
+			targetConn.Close()
+		}
 	}
 
-	tracker.FailCount++
-	tracker.LastActive = time.Now()
+	buffer := make([]byte, BUFFER_SIZE)
 
-	if tracker.FailCount >= 5 {
-		log.Printf("\033[31m[⚠️ AI DETECT] Aplikasi HP terdeteksi STUCK/TIMEOUT (%d x)! Mengaktifkan Force Auto-Fresh...\033[0m\n", tracker.FailCount)
-		tracker.FailCount = 0 
-		return true           
+	for {
+		n, err := clientConn.Read(buffer)
+		if err != nil {
+			closeAll()
+			return
+		}
+		if n == 0 {
+			continue
+		}
+
+		chunk := make([]byte, n)
+		copy(chunk, buffer[:n])
+		packetCounter++
+
+		if !firstPacketRead {
+			firstPacketRead = true
+
+			if chunk[0] == TLS_HANDSHAKE_BYTE {
+				isWsJalur = false
+				// JALUR 1: SSL/TLS Bypass
+				targetAddr := fmt.Sprintf("%s:%d", SSL_TARGET_HOST, SSL_TARGET_PORT)
+				targetConn, err = net.DialTimeout("tcp", targetAddr, 5*time.Second)
+				if err != nil {
+					closeAll()
+					return
+				}
+				if tcpConn, ok := targetConn.(*net.TCPConn); ok {
+					tcpConn.SetNoDelay(true)
+				}
+
+				_, err = targetConn.Write(chunk)
+				if err != nil {
+					closeAll()
+					return
+				}
+				backendReady = true
+
+			} else {
+				isWsJalur = true
+				// JALUR 2: WEBSOCKET ENHANCED
+				headers := parseHeaders(chunk)
+				rawTextLower := strings.ToLower(string(chunk))
+				isWsUpgrade := strings.Contains(rawTextLower, "upgrade: websocket") || headers["upgrade"] == "websocket"
+
+				if isWsUpgrade {
+					wsKey := headers["sec-websocket-key"]
+					if wsKey == "" && strings.Contains(rawTextLower, "sec-websocket-key:") {
+						lines := strings.Split(string(chunk), "\r\n")
+						for _, line := range lines {
+							if strings.Contains(strings.ToLower(line), "sec-websocket-key") {
+								parts := strings.Split(line, ":")
+								if len(parts) > 1 {
+									wsKey = strings.TrimSpace(parts[1])
+									break
+								}
+							}
+						}
+					}
+					// Jika wsKey kosong, buat random base64 mirip Node.js crypto
+					if wsKey == "" {
+						wsKey = base64.StdEncoding.EncodeToString([]byte("monster-mux-key-random"))
+					}
+
+					h := sha1.New()
+					h.Write([]byte(wsKey + WS_MAGIC))
+					acceptKey := base64.StdEncoding.EncodeToString(h.Sum(nil))
+
+					response := fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", acceptKey)
+					clientConn.Write([]byte(response))
+				} else {
+					clientConn.Write([]byte(DEFAULT_RESPONSE))
+				}
+
+				// Koneksi ke Dropbear
+				sshAddr := fmt.Sprintf("127.0.0.1:%d", SSH_TARGET_PORT)
+				targetConn, err = net.DialTimeout("tcp", sshAddr, 5*time.Second)
+				if err != nil {
+					closeAll()
+					return
+				}
+				if tcpConn, ok := targetConn.(*net.TCPConn); ok {
+					tcpConn.SetNoDelay(true)
+				}
+
+				backendReady = true
+
+				// Flush data antrean awal jika ada
+				if len(queueBuffers) > 0 {
+					for _, qChunk := range queueBuffers {
+						targetConn.Write(qChunk)
+					}
+					queueBuffers = nil
+				}
+			}
+
+			// GOROUTINE TRANSFER BALIK: Data dari Dropbear/SSL langsung diteruskan ke HP murni
+			go func() {
+				defer closeAll()
+				resBuffer := make([]byte, BUFFER_SIZE)
+				for {
+					nRes, errRes := targetConn.Read(resBuffer)
+					if errRes != nil {
+						return
+					}
+					if nRes > 0 {
+						_, errWrite := clientConn.Write(resBuffer[:nRes])
+						if errWrite != nil {
+							return
+						}
+					}
+				}
+			}()
+
+			continue
+		}
+
+		// 🚀 PROSES SARINGAN DATA JALUR WEBSOCKET ENHANCED
+		if isWsJalur {
+			cleanChunk := chunk
+
+			// 🔥 LOGIKA PEMBATAS: Hanya aktif pada 3 paket pertama fase jabat tangan
+			if packetCounter <= 3 {
+				chunkStr := string(chunk)
+				if strings.Contains(chunkStr, "PATCH") || strings.Contains(chunkStr, "HTTP/") || strings.Contains(chunkStr, "BMOVE") || strings.Contains(chunkStr, "GET ") {
+					if strings.Contains(chunkStr, "SSH-") {
+						idx := strings.Index(chunkStr, "SSH-")
+						cleanChunk = chunk[idx:]
+					} else if bytes.Contains(chunk, []byte{0x53, 0x53, 0x48}) { // \x53\x53\x48 = SSH
+						idx := bytes.Index(chunk, []byte{0x53, 0x53, 0x48})
+						cleanChunk = chunk[idx:]
+					} else {
+						continue // Ampas HTTP murni langsung dibakar (skip write)
+					}
+				}
+			}
+
+			if !backendReady {
+				queueBuffers = append(queueBuffers, cleanChunk)
+			} else {
+				// Di Go, penulisan ke socket sangat cepat secara native stream, tidak butuh jeda pause/resume manual
+				_, err = targetConn.Write(cleanChunk)
+				if err != nil {
+					closeAll()
+					return
+				}
+			}
+		} else {
+			if !backendReady {
+				queueBuffers = append(queueBuffers, chunk)
+			} else {
+				_, err = targetConn.Write(chunk)
+				if err != nil {
+					closeAll()
+					return
+				}
+			}
+		}
 	}
-
-	return false
 }
 
-func getEnv(key, fallback string) string {
-	if value, exists := os.LookupEnv(key); exists {
+// Helper untuk membaca Header persis Node.js logic
+func parseHeaders(rawBuffer []byte) map[string]string {
+	headers := make(map[string]string)
+	lines := strings.Split(string(rawBuffer), "\r\n")
+	if len(lines) <= 1 {
+		return headers
+	}
+	for i := 1; i < len(lines); i++ {
+		line := lines[i]
+		if strings.Contains(line, ":") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				key := strings.TrimSpace(strings.ToLower(parts[0]))
+				val := strings.TrimSpace(parts[1])
+				headers[key] = val
+			}
+		}
+	}
+	return headers
+}
+
+// Helper Environtment Variables
+func getEnvStr(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
 		return value
 	}
 	return fallback
 }
 
-// 🚀 ENGINE TUNING MAX: Pipa buffer diperlebar maksimal untuk kecepatan loss
-func turboTune(c net.Conn) {
-	if tcp, ok := c.(*net.TCPConn); ok {
-		_ = tcp.SetNoDelay(true)
-		_ = tcp.SetKeepAlive(true)
-		_ = tcp.SetKeepAlivePeriod(10 * time.Second)
-		
-		// Buffer 256KB agar tidak ada antrean paket di level OS Railway
-		_ = tcp.SetReadBuffer(262144)  
-		_ = tcp.SetWriteBuffer(262144) 
-	}
-}
-
-func main() {
-	// 🔥 AMPUTASI AUTO-GC: Matikan fitur bersih-bersih otomatis bawaan Go agar tidak menahan jaringan
-	debug.SetGCPercent(-1)
-
-	// ⏰ PAWANG MEMORI OTOMATIS: Bersih-bersih berjadwal setiap 10 detik agar memori gak bengkak
-	go func() {
-		for {
-			time.Sleep(10 * time.Second)
-			runtime.GC() // Panggil pembersihan memori secara paksa di background goroutine
-		}
-	}()
-
-	listenPort := getEnv("PORT", "8080")
-	sslTargetHost := getEnv("SSL_TARGET_HOST", "127.0.0.1")
-	sslTargetPort := getEnv("SSL_TARGET_PORT", "2443")
-	wsTargetHost := getEnv("WS_TARGET_HOST", "127.0.0.1")
-	wsTargetPort := getEnv("WS_TARGET_PORT", "22")
-
-	// 🎨 ANSI COLOR & CENTER BANNER
-	reset := "\033[0m"
-	cyan := "\033[36m"
-	yellow := "\033[33m"
-	magenta := "\033[35m"
-	green := "\033[32m"
-
-	rawTitle := "⚡ GOLANG TUNNEL PRO: v6.0 ZERO-JITTER AI TURBO ACTIVE ⚡"
-	rawOwner := "👑 PRIVATE TUNNEL BY: DEDEFATHU 👑"
-	
-	paddingTitle := (66 - len(rawTitle)) / 2
-	paddingOwner := (66 - len(rawOwner)) / 2
-	
-	centerTitle := strings.Repeat(" ", paddingTitle) + rawTitle
-	centerOwner := strings.Repeat(" ", paddingOwner) + rawOwner
-
-	log.Println(cyan + "==================================================================" + reset)
-	log.Println(yellow + centerTitle + reset)
-	log.Println(magenta + centerOwner + reset)
-	log.Println(green + "==================================================================" + reset)
-	log.Printf(green+"[*] Engine listening smoothly on port: %s\n"+reset, listenPort)
-	log.Println(cyan + "==================================================================" + reset)
-
-	listener, err := net.Listen("tcp", ":"+listenPort)
-	if err != nil {
-		log.Fatalf("[-] Listener gagal: %v", err)
-	}
-	defer listener.Close()
-
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			continue
-		}
-		go handlePureTurbo(conn, sslTargetHost, sslTargetPort, wsTargetHost, wsTargetPort)
-	}
-}
-
-func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
-	turboTune(c) 
-	defer c.Close()
-
-	buf := make([]byte, 131072)
-	c.SetReadDeadline(time.Now().Add(4 * time.Second))
-	n, err := c.Read(buf)
-	if err != nil || n == 0 {
-		return
-	}
-	c.SetReadDeadline(time.Time{})
-	rawPayload := buf[:n]
-
-	// Jalur SSL
-	if rawPayload[0] == TLS_HANDSHAKE_BYTE {
-		target, err := net.DialTimeout("tcp", sslHost+":"+sslPort, 4*time.Second)
-		if err != nil {
-			return
-		}
-		turboTune(target)
-		defer target.Close()
-		_, _ = target.Write(rawPayload)
-		pipePure(c, target, false)
-		return
-	}
-
-	// Jalur WebSocket (Enhanced Payload)
-	reqStr := string(rawPayload)
-	wsKey := ""
-	for _, line := range strings.Split(reqStr, "\r\n") {
-		if strings.Contains(strings.ToLower(line), "sec-websocket-key") {
-			if parts := strings.Split(line, ":"); len(parts) > 1 {
-				wsKey = strings.TrimSpace(parts[1])
-				break
-			}
+func getEnvInt(key string, fallback int) int {
+	if value, ok := os.LookupEnv(key); ok {
+		if intVal, err := strconv.Atoi(value); err == nil {
+			return intVal
 		}
 	}
-
-	if wsKey == "" {
-		wsKey = base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
-	}
-
-	h := sha1.New()
-	h.Write([]byte(wsKey + WS_MAGIC))
-	acceptKey := base64.StdEncoding.EncodeToString(h.Sum(nil))
-
-	response := "HTTP/1.1 101 Switching Protocols\r\n" +
-		"Upgrade: websocket\r\n" +
-		"Connection: Upgrade\r\n" +
-		"Sec-WebSocket-Accept: " + acceptKey + "\r\n\r\n"
-	_, err = c.Write([]byte(response))
-	if err != nil {
-		return
-	}
-
-	// Hubungkan ke SSH Internal
-	sshTarget, err := net.DialTimeout("tcp", wsHost+":"+wsPort, 4*time.Second)
-	if err != nil {
-		return
-	}
-	turboTune(sshTarget)
-	defer sshTarget.Close()
-
-	if idx := bytes.Index(rawPayload, []byte("SSH-")); idx != -1 {
-		_, _ = sshTarget.Write(rawPayload[idx:])
-	}
-
-	pipePure(c, sshTarget, true)
-}
-
-func pipePure(client, target net.Conn, isWS bool) {
-	var once sync.Once
-	closeAll := func() {
-		_ = client.Close()
-		_ = target.Close()
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	// Jalur A: HP -> SSH Server
-	go func() {
-		defer wg.Done()
-		
-		// Pinjam buffer dari Pool biar gak bikin sampah memori baru
-		buf := bufferPool.Get().([]byte)
-		defer bufferPool.Put(buf) // Kembalikan setelah selesai koneksi
-		
-		sshHandshakeFound := false
-		
-		for {
-			if isWS && !sshHandshakeFound {
-				client.SetReadDeadline(time.Now().Add(5 * time.Second))
-			} else {
-				client.SetReadDeadline(time.Now().Add(120 * time.Second))
-			}
-
-			n, err := client.Read(buf)
-			if err != nil {
-				if isWS && !sshHandshakeFound {
-					if checkSmartRecovery(client.RemoteAddr().String(), true) {
-						time.Sleep(1 * time.Second) 
-					}
-				}
-				break
-			}
-			
-			data := buf[:n]
-			
-			if isWS && !sshHandshakeFound {
-				if idx := bytes.Index(data, []byte("SSH-")); idx != -1 {
-					data = data[idx:]
-					sshHandshakeFound = true
-					client.SetReadDeadline(time.Time{})
-					checkSmartRecovery(client.RemoteAddr().String(), false)
-				} else {
-					continue 
-				}
-			}
-
-			_, err = target.Write(data)
-			if err != nil {
-				break
-			}
-		}
-		once.Do(closeAll)
-	}()
-
-	// Jalur B: SSH Server -> HP
-	go func() {
-		defer wg.Done()
-		
-		// Pinjam buffer dari Pool untuk download speed los maksimal
-		buf := bufferPool.Get().([]byte)
-		defer bufferPool.Put(buf)
-		
-		for {
-			target.SetReadDeadline(time.Now().Add(20 * time.Second))
-			n, err := target.Read(buf)
-			
-			if err != nil {
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					if isWS {
-						_, err = client.Write([]byte{0x89, 0x00})
-						if err != nil {
-							break
-						}
-						continue
-					}
-				}
-				break
-			}
-			
-			if n > 0 {
-				_, err = client.Write(buf[:n])
-				if err != nil {
-					break
-				}
-			}
-		}
-		once.Do(closeAll)
-	}()
-
-	wg.Wait()
+	return fallback
 }
