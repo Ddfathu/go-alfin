@@ -7,7 +7,37 @@ SSL_INTERNAL_PORT="${SSL_INTERNAL_PORT:-2443}"
 WS_INTERNAL_PORT="${WS_INTERNAL_PORT:-8880}"
 
 # =====================================================================
-# 🔥 SETUP OPENSSH: Pahat Host Keys & Buka Parameter Enkripsi Longgar
+# 🔥 SYSCTL ULTRA HIGH SPEED TWEAK (MAKAN RAM SPEK BADAK)
+# =====================================================================
+echo "[*] Menyuntikkan Tweak Network Buffer High Speed..."
+
+# Aktifkan BBR Congestion Control jika didukung kernel Alpine
+modprobe tcp_bbr 2>/dev/null
+echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+
+# Alokasi Maksimal Buffer Jaringan (Makan RAM demi Speed Mentok Kanan)
+echo "net.core.rmem_max=67108864" >> /etc/sysctl.conf
+echo "net.core.wmem_max=67108864" >> /etc/sysctl.conf
+echo "net.core.rmem_default=33554432" >> /etc/sysctl.conf
+echo "net.core.wmem_default=33554432" >> /etc/sysctl.conf
+
+# TCP Window Tuning & Buffer Memory (Min, Default, Max dalam Bytes)
+echo "net.ipv4.tcp_rmem=4096 87380 67108864" >> /etc/sysctl.conf
+echo "net.ipv4.tcp_wmem=4096 65536 67108864" >> /etc/sysctl.conf
+
+# Naikkan Batas Antrean Paket (Anti-Drop & Bebas Los saat Tethering Brutal)
+echo "net.core.netdev_max_backlog=10000" >> /etc/sysctl.conf
+echo "net.ipv4.tcp_max_syn_backlog=8192" >> /etc/sysctl.conf
+echo "net.ipv4.tcp_tw_reuse=1" >> /etc/sysctl.conf
+echo "net.ipv4.tcp_fin_timeout=15" >> /etc/sysctl.conf
+echo "net.ipv4.tcp_keepalive_time=60" >> /etc/sysctl.conf
+
+# Terapkan konfigurasi sysctl baru
+sysctl -p /etc/sysctl.conf 2>/dev/null
+
+# =====================================================================
+# 🔥 SETUP OPENSSH: Pahat Host Keys & Buka Parameter Enkripsi Ringan CPU
 # =====================================================================
 echo "[*] Membuat Host Keys OpenSSH..."
 ssh-keygen -A
@@ -42,9 +72,9 @@ EOF
 chmod +x /etc/profile.d/99-respon-server.sh
 
 # =====================================================================
-# 🛠️ BAGIAN YANG DIGANTI: SUNTIKAN ANTI-EOF & MAX CONFIG UNTUK TETHERING
+# 🛠️ RACIKAN SSHD TUNING: SPEK BADAK ANTI-EOF + ULTRA THROUGHPUT
 # =====================================================================
-echo "[*] Membuat Konfigurasi sshd_config Turbo (SPEK BADAK ANTI-EOF)..."
+echo "[*] Membuat Konfigurasi sshd_config Turbo..."
 cat << 'EOF' > /etc/ssh/sshd_config
 Port 22
 ListenAddress 127.0.0.1
@@ -63,16 +93,16 @@ MaxStartups 100:30:500
 MaxSessions 100
 MaxAuthTries 10
 
-# 🔥 SUNTIKAN SAKTI ANTI-REKONEK (Diselaraskan dengan Script Go v6.0)
+# 🔥 SUNTIKAN SAKTI ANTI-REKONEK
 ClientAliveInterval 30
 ClientAliveCountMax 99999
 TCPKeepAlive yes
 LoginGraceTime 30
 
-# 🚀 RACIKAN MULTI-ENKRIPSI: Sekali Klik Langsung Konek + Speed Tetap Mentok Kanan
-Ciphers aes128-gcm@openssh.com,aes256-gcm@openssh.com,chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-cbc,3des-cbc
-KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1
-MACs umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha1,hmac-sha1-96
+# 🚀 CIPHERS OPTIMIZED FOR SPEED: Hanya menyisakan yang enteng di CPU agar bandwidth plong
+Ciphers chacha20-poly1305@openssh.com,aes128-gcm@openssh.com,aes256-gcm@openssh.com
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org
+MACs umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com
 EOF
 # =====================================================================
 
@@ -91,16 +121,20 @@ openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 \
     -subj "/C=ID/ST=Jakarta/L=Jakarta/O=RailwaySSH/CN=localhost" \
     -keyout /etc/stunnel/stunnel.pem -out /etc/stunnel/stunnel.pem
 
+# 🚀 OPTIMASI STUNNEL: Matikan debug log & perkecil timeout agar RAM fokus ke speed data
 echo "[*] Mengonfigurasi Stunnel internal di Port $SSL_INTERNAL_PORT..."
 cat <<EOF > /etc/stunnel/stunnel.conf
 pid = /var/run/stunnel.pid
 foreground = yes
-debug = 4
+debug = 0
 
 [ssh-ssl]
 accept = 127.0.0.1:$SSL_INTERNAL_PORT
 connect = 127.0.0.1:22
 cert = /etc/stunnel/stunnel.pem
+options = NO_SSLv2
+options = NO_SSLv3
+TIMEOUTclose = 0
 EOF
 
 echo "[*] Menambahkan alias dan auto-start menu ke .bashrc..."
