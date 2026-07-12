@@ -22,10 +22,10 @@ var (
 )
 
 const (
-	WS_MAGIC            = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-	DEFAULT_RESPONSE    = "HTTP/1.1 101 Switching Protocols\r\n\r\n"
+	WS_MAGIC           = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+	DEFAULT_RESPONSE   = "HTTP/1.1 101 Switching Protocols\r\n\r\n"
 	TLS_HANDSHAKE_BYTE = 0x16
-	BUFFER_SIZE         = 1024 * 1024 // 1MB Buffer
+	BUFFER_SIZE        = 1024 * 1024 
 )
 
 func main() {
@@ -43,17 +43,15 @@ func main() {
 		if err != nil {
 			continue
 		}
-		// Jalankan per koneksi di dalam Goroutine terpisah (Multi-thread otomatis)
 		go handleConnection(clientConn)
 	}
 }
 
 func handleConnection(clientConn net.Conn) {
-	// Optimasi TCP Socket biar persis setNoDelay & setKeepAlive di Node.js
 	if tcpConn, ok := clientConn.(*net.TCPConn); ok {
 		tcpConn.SetNoDelay(true)
 		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(30 * time.幼稚Second)
+		tcpConn.SetKeepAlivePeriod(30 * time.Second) // 🔥 Sudah diperbaiki di sini
 	}
 
 	var targetConn net.Conn
@@ -80,8 +78,8 @@ func handleConnection(clientConn net.Conn) {
 	buffer := make([]byte, BUFFER_SIZE)
 
 	for {
-		n, err := clientConn.Read(buffer)
-		if err != nil {
+		n, errRead := clientConn.Read(buffer)
+		if errRead != nil {
 			closeAll()
 			return
 		}
@@ -98,7 +96,6 @@ func handleConnection(clientConn net.Conn) {
 
 			if chunk[0] == TLS_HANDSHAKE_BYTE {
 				isWsJalur = false
-				// JALUR 1: SSL/TLS Bypass
 				targetAddr := fmt.Sprintf("%s:%d", SSL_TARGET_HOST, SSL_TARGET_PORT)
 				targetConn, err = net.DialTimeout("tcp", targetAddr, 5*time.Second)
 				if err != nil {
@@ -118,7 +115,6 @@ func handleConnection(clientConn net.Conn) {
 
 			} else {
 				isWsJalur = true
-				// JALUR 2: WEBSOCKET ENHANCED
 				headers := parseHeaders(chunk)
 				rawTextLower := strings.ToLower(string(chunk))
 				isWsUpgrade := strings.Contains(rawTextLower, "upgrade: websocket") || headers["upgrade"] == "websocket"
@@ -137,7 +133,6 @@ func handleConnection(clientConn net.Conn) {
 							}
 						}
 					}
-					// Jika wsKey kosong, buat random base64 mirip Node.js crypto
 					if wsKey == "" {
 						wsKey = base64.StdEncoding.EncodeToString([]byte("monster-mux-key-random"))
 					}
@@ -152,7 +147,6 @@ func handleConnection(clientConn net.Conn) {
 					clientConn.Write([]byte(DEFAULT_RESPONSE))
 				}
 
-				// Koneksi ke Dropbear
 				sshAddr := fmt.Sprintf("127.0.0.1:%d", SSH_TARGET_PORT)
 				targetConn, err = net.DialTimeout("tcp", sshAddr, 5*time.Second)
 				if err != nil {
@@ -165,7 +159,6 @@ func handleConnection(clientConn net.Conn) {
 
 				backendReady = true
 
-				// Flush data antrean awal jika ada
 				if len(queueBuffers) > 0 {
 					for _, qChunk := range queueBuffers {
 						targetConn.Write(qChunk)
@@ -174,7 +167,7 @@ func handleConnection(clientConn net.Conn) {
 				}
 			}
 
-			// GOROUTINE TRANSFER BALIK: Data dari Dropbear/SSL langsung diteruskan ke HP murni
+			// Jalur balik murni dari Dropbear ke HP client
 			go func() {
 				defer closeAll()
 				resBuffer := make([]byte, BUFFER_SIZE)
@@ -195,22 +188,20 @@ func handleConnection(clientConn net.Conn) {
 			continue
 		}
 
-		// 🚀 PROSES SARINGAN DATA JALUR WEBSOCKET ENHANCED
 		if isWsJalur {
 			cleanChunk := chunk
 
-			// 🔥 LOGIKA PEMBATAS: Hanya aktif pada 3 paket pertama fase jabat tangan
 			if packetCounter <= 3 {
 				chunkStr := string(chunk)
 				if strings.Contains(chunkStr, "PATCH") || strings.Contains(chunkStr, "HTTP/") || strings.Contains(chunkStr, "BMOVE") || strings.Contains(chunkStr, "GET ") {
 					if strings.Contains(chunkStr, "SSH-") {
 						idx := strings.Index(chunkStr, "SSH-")
 						cleanChunk = chunk[idx:]
-					} else if bytes.Contains(chunk, []byte{0x53, 0x53, 0x48}) { // \x53\x53\x48 = SSH
+					} else if bytes.Contains(chunk, []byte{0x53, 0x53, 0x48}) {
 						idx := bytes.Index(chunk, []byte{0x53, 0x53, 0x48})
 						cleanChunk = chunk[idx:]
 					} else {
-						continue // Ampas HTTP murni langsung dibakar (skip write)
+						continue 
 					}
 				}
 			}
@@ -218,7 +209,6 @@ func handleConnection(clientConn net.Conn) {
 			if !backendReady {
 				queueBuffers = append(queueBuffers, cleanChunk)
 			} else {
-				// Di Go, penulisan ke socket sangat cepat secara native stream, tidak butuh jeda pause/resume manual
 				_, err = targetConn.Write(cleanChunk)
 				if err != nil {
 					closeAll()
@@ -239,7 +229,6 @@ func handleConnection(clientConn net.Conn) {
 	}
 }
 
-// Helper untuk membaca Header persis Node.js logic
 func parseHeaders(rawBuffer []byte) map[string]string {
 	headers := make(map[string]string)
 	lines := strings.Split(string(rawBuffer), "\r\n")
@@ -260,7 +249,6 @@ func parseHeaders(rawBuffer []byte) map[string]string {
 	return headers
 }
 
-// Helper Environtment Variables
 func getEnvStr(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
