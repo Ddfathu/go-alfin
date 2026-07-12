@@ -25,7 +25,7 @@ const (
 	WS_MAGIC           = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 	DEFAULT_RESPONSE   = "HTTP/1.1 101 Switching Protocols\r\n\r\n"
 	TLS_HANDSHAKE_BYTE = 0x16
-	BUFFER_SIZE        = 1024 * 1024 
+	BUFFER_SIZE        = 512 * 1024 // Buffer stabil 512KB
 )
 
 func main() {
@@ -36,7 +36,7 @@ func main() {
 	}
 	defer listener.Close()
 
-	fmt.Printf("[monster-mux-go] ALL-IN-ONE FIXED ELITE v7.7 ACTIVE on Port: %d 🚀\n", LISTEN_PORT)
+	fmt.Printf("[monster-mux-go] ALL-IN-ONE SABAR ELITE v8.0 ACTIVE on Port: %d 🚀\n", LISTEN_PORT)
 
 	for {
 		clientConn, err := listener.Accept()
@@ -51,7 +51,7 @@ func handleConnection(clientConn net.Conn) {
 	if tcpConn, ok := clientConn.(*net.TCPConn); ok {
 		tcpConn.SetNoDelay(true)
 		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(30 * time.Second) // 🔥 Sudah diperbaiki di sini
+		tcpConn.SetKeepAlivePeriod(30 * time.Second)
 	}
 
 	var targetConn net.Conn
@@ -61,8 +61,10 @@ func handleConnection(clientConn net.Conn) {
 	isWsJalur := false
 	firstPacketRead := false
 	packetCounter := 0
+	
+	// Gunakan channel sebagai antrean "sabar" agar data tidak tumpang tindih
+	dataChan := make(chan []byte, 100)
 	backendReady := false
-	var queueBuffers [][]byte
 
 	closeAll := func() {
 		mu.Lock()
@@ -75,11 +77,60 @@ func handleConnection(clientConn net.Conn) {
 		}
 	}
 
+	// Goroutine khusus untuk mengirim data ke Backend secara berurutan dan teratur
+	go func() {
+		defer closeAll()
+		for chunk := range dataChan {
+			packetCounter++
+			
+			// Jika koneksi ke backend belum siap, kita beri mode sabar (tunggu sebentar)
+			for i := 0; i < 50; i++ {
+				mu.Lock()
+				ready := backendReady
+				mu.Unlock()
+				if ready {
+					break
+				}
+				time.Sleep(10 * time.Millisecond) // Mode sabar 10ms
+			}
+
+			mu.Lock()
+			tConn := targetConn
+			mu.Unlock()
+
+			if tConn == nil {
+				return
+			}
+
+			cleanChunk := chunk
+			if isWsJalur && packetCounter <= 3 {
+				chunkStr := string(chunk)
+				if strings.Contains(chunkStr, "PATCH") || strings.Contains(chunkStr, "HTTP/") || strings.Contains(chunkStr, "BMOVE") || strings.Contains(chunkStr, "GET ") {
+					if strings.Contains(chunkStr, "SSH-") {
+						idx := strings.Index(chunkStr, "SSH-")
+						cleanChunk = chunk[idx:]
+					} else if bytes.Contains(chunk, []byte{0x53, 0x53, 0x48}) {
+						idx := bytes.Index(chunk, []byte{0x53, 0x53, 0x48})
+						cleanChunk = chunk[idx:]
+					} else {
+						continue // Ampas HTTP dibakar hangus
+					}
+				}
+			}
+
+			_, errWrite := tConn.Write(cleanChunk)
+			if errWrite != nil {
+				return
+			}
+		}
+	}()
+
 	buffer := make([]byte, BUFFER_SIZE)
 
 	for {
 		n, errRead := clientConn.Read(buffer)
 		if errRead != nil {
+			close(dataChan)
 			closeAll()
 			return
 		}
@@ -89,7 +140,6 @@ func handleConnection(clientConn net.Conn) {
 
 		chunk := make([]byte, n)
 		copy(chunk, buffer[:n])
-		packetCounter++
 
 		if !firstPacketRead {
 			firstPacketRead = true
@@ -99,19 +149,15 @@ func handleConnection(clientConn net.Conn) {
 				targetAddr := fmt.Sprintf("%s:%d", SSL_TARGET_HOST, SSL_TARGET_PORT)
 				targetConn, err = net.DialTimeout("tcp", targetAddr, 5*time.Second)
 				if err != nil {
+					close(dataChan)
 					closeAll()
 					return
 				}
-				if tcpConn, ok := targetConn.(*net.TCPConn); ok {
-					tcpConn.SetNoDelay(true)
-				}
-
-				_, err = targetConn.Write(chunk)
-				if err != nil {
-					closeAll()
-					return
-				}
+				
+				mu.Lock()
 				backendReady = true
+				mu.Unlock()
+				dataChan <- chunk
 
 			} else {
 				isWsJalur = true
@@ -150,6 +196,7 @@ func handleConnection(clientConn net.Conn) {
 				sshAddr := fmt.Sprintf("127.0.0.1:%d", SSH_TARGET_PORT)
 				targetConn, err = net.DialTimeout("tcp", sshAddr, 5*time.Second)
 				if err != nil {
+					close(dataChan)
 					closeAll()
 					return
 				}
@@ -157,22 +204,24 @@ func handleConnection(clientConn net.Conn) {
 					tcpConn.SetNoDelay(true)
 				}
 
+				mu.Lock()
 				backendReady = true
-
-				if len(queueBuffers) > 0 {
-					for _, qChunk := range queueBuffers {
-						targetConn.Write(qChunk)
-					}
-					queueBuffers = nil
-				}
+				mu.Unlock()
+				dataChan <- chunk
 			}
 
-			// Jalur balik murni dari Dropbear ke HP client
+			// Jalur balik instan dari Dropbear ke HP
 			go func() {
 				defer closeAll()
 				resBuffer := make([]byte, BUFFER_SIZE)
 				for {
-					nRes, errRes := targetConn.Read(resBuffer)
+					mu.Lock()
+					tConn := targetConn
+					mu.Unlock()
+					if tConn == nil {
+						return
+					}
+					nRes, errRes := tConn.Read(resBuffer)
 					if errRes != nil {
 						return
 					}
@@ -188,44 +237,8 @@ func handleConnection(clientConn net.Conn) {
 			continue
 		}
 
-		if isWsJalur {
-			cleanChunk := chunk
-
-			if packetCounter <= 3 {
-				chunkStr := string(chunk)
-				if strings.Contains(chunkStr, "PATCH") || strings.Contains(chunkStr, "HTTP/") || strings.Contains(chunkStr, "BMOVE") || strings.Contains(chunkStr, "GET ") {
-					if strings.Contains(chunkStr, "SSH-") {
-						idx := strings.Index(chunkStr, "SSH-")
-						cleanChunk = chunk[idx:]
-					} else if bytes.Contains(chunk, []byte{0x53, 0x53, 0x48}) {
-						idx := bytes.Index(chunk, []byte{0x53, 0x53, 0x48})
-						cleanChunk = chunk[idx:]
-					} else {
-						continue 
-					}
-				}
-			}
-
-			if !backendReady {
-				queueBuffers = append(queueBuffers, cleanChunk)
-			} else {
-				_, err = targetConn.Write(cleanChunk)
-				if err != nil {
-					closeAll()
-					return
-				}
-			}
-		} else {
-			if !backendReady {
-				queueBuffers = append(queueBuffers, chunk)
-			} else {
-				_, err = targetConn.Write(chunk)
-				if err != nil {
-					closeAll()
-					return
-				}
-			}
-		}
+		// Kirim paket susulan ke channel antrean biar diurutkan secara sabar
+		dataChan <- chunk
 	}
 }
 
