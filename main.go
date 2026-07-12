@@ -58,7 +58,7 @@ func main() {
 	wsTargetHost := getEnv("WS_TARGET_HOST", "127.0.0.1")
 	wsTargetPort := getEnv("WS_TARGET_PORT", "22")
 
-	fmt.Printf("[monster-mux-go] ULTIMATE GUARD v9.0 ACTIVE on Port: %s 🚀\n", listenPort)
+	fmt.Printf("[monster-mux-go] ULTIMATE GUARD v9.1 ACTIVE on Port: %s 🚀\n", listenPort)
 
 	listener, err := net.Listen("tcp", ":"+listenPort)
 	if err != nil {
@@ -95,7 +95,7 @@ func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 		turboTune(target)
 		defer target.Close()
 		_, _ = target.Write(rawPayload)
-		pipePure(c, target, false)
+		pipePure(c, target, false, false) // 🔥 FIXED: Ditambahkan parameter ke-4 (false) agar tidak eror build
 		return
 	}
 
@@ -144,7 +144,6 @@ func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 		cleanPayload = rawPayload[idx:]
 	}
 
-	// Jika ada isi biner SSH murni, kirim ke Dropbear. Jika isi paket pertama murni ampas HTTP, biarkan kosong dulu.
 	if len(cleanPayload) > 0 {
 		_, _ = sshTarget.Write(cleanPayload)
 	}
@@ -179,7 +178,7 @@ func pipePure(client, target net.Conn, isWS bool, initialHandshakeFound bool) {
 			
 			data := buf[:n]
 			
-			// 🔥 GERBANG DYNAMIC PRECISENESS: Saringan hanya memotong data jika STATUS BELUM CONNECT
+			// 🔥 GERBANG DYNAMIC PRECISENESS: Saringan aktif membakar ampas HTTP method sampai SSH ketemu
 			if isWS && !sshHandshakeFound {
 				if idx := bytes.Index(data, []byte("SSH-")); idx != -1 {
 					data = data[idx:]
@@ -190,12 +189,10 @@ func pipePure(client, target net.Conn, isWS bool, initialHandshakeFound bool) {
 					sshHandshakeFound = true // KUNCI GERBANG TOTAL!
 					_ = client.SetReadDeadline(time.Time{})
 				} else {
-					// Jika paket berisi ampas teks HTTP murni (BMOVE, PATCH, GET) sebelum handshake SSH kelar, hanguskan!
-					continue 
+					continue // Bersihkan ampas HTTP tiruan (BMOVE, PATCH, GET)
 				}
 			}
 
-			// Kirim data yang sudah steril (Atau data speedtest loss murni setelah gerbang dikunci)
 			_, err = target.Write(data)
 			if err != nil {
 				break
