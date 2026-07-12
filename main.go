@@ -20,7 +20,6 @@ const (
 	TLS_HANDSHAKE_BYTE = 0x16
 )
 
-// 🧠 AI SMART RECOVERY DEFINITION
 type ClientTracker struct {
 	FailCount  int
 	LastActive time.Time
@@ -31,7 +30,7 @@ var (
 	clientMap    = make(map[string]*ClientTracker)
 )
 
-// 🔄 ZERO-JITTER BUFFER POOL: Daur ulang memori agar Go gak usah "bersih-bersih" mendadak
+// 🔄 ZERO-JITTER BUFFER POOL: Daur ulang memori agar Go tidak "lag" bersih-bersih
 var bufferPool = sync.Pool{
 	New: func() interface{} {
 		return make([]byte, 65536)
@@ -75,28 +74,26 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-// 🚀 ENGINE TUNING MAX: Pipa buffer diperlebar maksimal untuk kecepatan loss
+// 🚀 ENGINE TUNING MAX
 func turboTune(c net.Conn) {
 	if tcp, ok := c.(*net.TCPConn); ok {
 		_ = tcp.SetNoDelay(true)
 		_ = tcp.SetKeepAlive(true)
 		_ = tcp.SetKeepAlivePeriod(10 * time.Second)
-		
-		// Buffer 256KB agar tidak ada antrean paket di level OS Railway
 		_ = tcp.SetReadBuffer(262144)  
 		_ = tcp.SetWriteBuffer(262144) 
 	}
 }
 
 func main() {
-	// 🔥 AMPUTASI AUTO-GC: Matikan fitur bersih-bersih otomatis bawaan Go agar tidak menahan jaringan
+	// 🔥 AMPUTASI AUTO-GC: Matikan pembersihan otomatis bawaan Go
 	debug.SetGCPercent(-1)
 
-	// ⏰ PAWANG MEMORI OTOMATIS: Bersih-bersih berjadwal setiap 10 detik agar memori gak bengkak
+	// ⏰ PAWANG MEMORI OTOMATIS: Bersih-bersih berjadwal setiap 10 detik
 	go func() {
 		for {
 			time.Sleep(10 * time.Second)
-			runtime.GC() // Panggil pembersihan memori secara paksa di background goroutine
+			runtime.GC() 
 		}
 	}()
 
@@ -106,14 +103,13 @@ func main() {
 	wsTargetHost := getEnv("WS_TARGET_HOST", "127.0.0.1")
 	wsTargetPort := getEnv("WS_TARGET_PORT", "22")
 
-	// 🎨 ANSI COLOR & CENTER BANNER
 	reset := "\033[0m"
 	cyan := "\033[36m"
 	yellow := "\033[33m"
 	magenta := "\033[35m"
 	green := "\033[32m"
 
-	rawTitle := "⚡ GOLANG TUNNEL PRO: v6.0 ZERO-JITTER AI TURBO ACTIVE ⚡"
+	rawTitle := "⚡ GOLANG TUNNEL PRO: v6.1 FIXED CORE SABAR ⚡"
 	rawOwner := "👑 PRIVATE TUNNEL BY: DEDEFATHU 👑"
 	
 	paddingTitle := (66 - len(rawTitle)) / 2
@@ -207,7 +203,11 @@ func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 	turboTune(sshTarget)
 	defer sshTarget.Close()
 
+	// 🔥 FIXED: Di paket pertama, jika ada string SSH, langsung kirim.
+	// Jika belum ada (karena murni teks HTTP enhanced), kita biarkan dan serahkan ke loop pipePure di bawah.
 	if idx := bytes.Index(rawPayload, []byte("SSH-")); idx != -1 {
+		_, _ = sshTarget.Write(rawPayload[idx:])
+	} else if idx := bytes.Index(rawPayload, []byte{0x53, 0x53, 0x48}); idx != -1 {
 		_, _ = sshTarget.Write(rawPayload[idx:])
 	}
 
@@ -224,13 +224,12 @@ func pipePure(client, target net.Conn, isWS bool) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Jalur A: HP -> SSH Server
+	// Jalur A: HP -> SSH Server (MODE SABAR UTUH)
 	go func() {
 		defer wg.Done()
 		
-		// Pinjam buffer dari Pool biar gak bikin sampah memori baru
 		buf := bufferPool.Get().([]byte)
-		defer bufferPool.Put(buf) // Kembalikan setelah selesai koneksi
+		defer bufferPool.Put(buf) 
 		
 		sshHandshakeFound := false
 		
@@ -253,13 +252,20 @@ func pipePure(client, target net.Conn, isWS bool) {
 			
 			data := buf[:n]
 			
+			// 🔥 MODE SABAR AKTIF 100%: Filter ketat bawaan script Anda
 			if isWS && !sshHandshakeFound {
 				if idx := bytes.Index(data, []byte("SSH-")); idx != -1 {
 					data = data[idx:]
 					sshHandshakeFound = true
 					client.SetReadDeadline(time.Time{})
 					checkSmartRecovery(client.RemoteAddr().String(), false)
+				} else if idx := bytes.Index(data, []byte{0x53, 0x53, 0x48}); idx != -1 { // Cek heksadesimal \x53\x53\x48
+					data = data[idx:]
+					sshHandshakeFound = true
+					client.SetReadDeadline(time.Time{})
+					checkSmartRecovery(client.RemoteAddr().String(), false)
 				} else {
+					// 🧠 INI DIA: Teks ampas PATCH/BMOVE/HTTP murni langsung dibakar dan dilewati (Mode Sabar)
 					continue 
 				}
 			}
@@ -272,16 +278,15 @@ func pipePure(client, target net.Conn, isWS bool) {
 		once.Do(closeAll)
 	}()
 
-	// Jalur B: SSH Server -> HP
+	// Jalur B: SSH Server -> HP (Download Speed Los)
 	go func() {
 		defer wg.Done()
 		
-		// Pinjam buffer dari Pool untuk download speed los maksimal
 		buf := bufferPool.Get().([]byte)
 		defer bufferPool.Put(buf)
 		
 		for {
-			target.SetReadDeadline(time.Now().Add(20 * time.Second))
+			target.SetReadDeadline(time.Now().Add(30 * time.Second))
 			n, err := target.Read(buf)
 			
 			if err != nil {
