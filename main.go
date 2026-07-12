@@ -38,7 +38,7 @@ func turboTune(c net.Conn) {
 		_ = tcp.SetNoDelay(true)
 		_ = tcp.SetKeepAlive(true)
 		_ = tcp.SetKeepAlivePeriod(30 * time.Second)
-		_ = tcp.SetReadBuffer(524288)  // Diperbesar ke 512KB untuk kestabilan speedtest
+		_ = tcp.SetReadBuffer(524288)  // 512KB Buffer OS untuk kestabilan upload
 		_ = tcp.SetWriteBuffer(524288) 
 	}
 }
@@ -58,7 +58,7 @@ func main() {
 	wsTargetHost := getEnv("WS_TARGET_HOST", "127.0.0.1")
 	wsTargetPort := getEnv("WS_TARGET_PORT", "22")
 
-	fmt.Printf("[monster-mux-go] PERFECT HYBRID v8.5 ACTIVE on Port: %s 🚀\n", listenPort)
+	fmt.Printf("[monster-mux-go] ULTIMATE GUARD v9.0 ACTIVE on Port: %s 🚀\n", listenPort)
 
 	listener, err := net.Listen("tcp", ":"+listenPort)
 	if err != nil {
@@ -136,28 +136,23 @@ func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 	turboTune(sshTarget)
 	defer sshTarget.Close()
 
-	// 🔥 LOGIKA PEMBERSIH UTUH: Kita bersihkan ampas teks HTTP tanpa memotong isi binary data jabat tangan
-	cleanPayload := rawPayload
-	if strings.Contains(reqStr, "PATCH") || strings.Contains(reqStr, "HTTP/") || strings.Contains(reqStr, "BMOVE") || strings.Contains(reqStr, "GET ") {
-		// Hapus trigger teks enhanced method proxy tiruan agar Dropbear tidak bingung
-		cleanPayload = bytes.ReplaceAll(cleanPayload, []byte("BMOVE / HTTP/1.0\r\n"), []byte(""))
-		cleanPayload = bytes.ReplaceAll(cleanPayload, []byte("PATCH / HTTP/1.1\r\n"), []byte(""))
-		// Hapus sisa baris Host jika masih menempel akibat payload Custom
-		if idx := bytes.Index(cleanPayload, []byte("Host:")); idx != -1 {
-			if endIdx := bytes.Index(cleanPayload[idx:], []byte("\r\n")); endIdx != -1 {
-				cleanPayload = bytes.NewBuffer(append(cleanPayload[:idx], cleanPayload[idx+endIdx+2:]...)).Bytes()
-			}
-		}
+	// Fase Awal: Cari apakah ada kepala SSH di paket pertama
+	var cleanPayload []byte
+	if idx := bytes.Index(rawPayload, []byte("SSH-")); idx != -1 {
+		cleanPayload = rawPayload[idx:]
+	} else if idx := bytes.Index(rawPayload, []byte{0x53, 0x53, 0x48}); idx != -1 {
+		cleanPayload = rawPayload[idx:]
 	}
 
+	// Jika ada isi biner SSH murni, kirim ke Dropbear. Jika isi paket pertama murni ampas HTTP, biarkan kosong dulu.
 	if len(cleanPayload) > 0 {
 		_, _ = sshTarget.Write(cleanPayload)
 	}
 
-	pipePure(c, sshTarget, true)
+	pipePure(c, sshTarget, true, len(cleanPayload) > 0)
 }
 
-func pipePure(client, target net.Conn, isWS bool) {
+func pipePure(client, target net.Conn, isWS bool, initialHandshakeFound bool) {
 	var once sync.Once
 	closeAll := func() {
 		_ = client.Close()
@@ -167,11 +162,13 @@ func pipePure(client, target net.Conn, isWS bool) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Jalur A: HP -> SSH Server (Upload Speedtest Kebal Total)
+	// Jalur A: HP -> SSH Server (Upload Speedtest Anti-Cut)
 	go func() {
 		defer wg.Done()
 		buf := bufferPool.Get().([]byte)
 		defer bufferPool.Put(buf) 
+		
+		sshHandshakeFound := initialHandshakeFound
 		
 		for {
 			_ = client.SetReadDeadline(time.Now().Add(120 * time.Second))
@@ -180,9 +177,26 @@ func pipePure(client, target net.Conn, isWS bool) {
 				break
 			}
 			
-			// 🔥 PENTING: Paket susulan saat speedtest upload langsung dioper mentah 100% 
-			// Tanpa saringan string/continue yang merusak urutan paket cipher
-			_, err = target.Write(buf[:n])
+			data := buf[:n]
+			
+			// 🔥 GERBANG DYNAMIC PRECISENESS: Saringan hanya memotong data jika STATUS BELUM CONNECT
+			if isWS && !sshHandshakeFound {
+				if idx := bytes.Index(data, []byte("SSH-")); idx != -1 {
+					data = data[idx:]
+					sshHandshakeFound = true // KUNCI GERBANG TOTAL!
+					_ = client.SetReadDeadline(time.Time{})
+				} else if idx := bytes.Index(data, []byte{0x53, 0x53, 0x48}); idx != -1 {
+					data = data[idx:]
+					sshHandshakeFound = true // KUNCI GERBANG TOTAL!
+					_ = client.SetReadDeadline(time.Time{})
+				} else {
+					// Jika paket berisi ampas teks HTTP murni (BMOVE, PATCH, GET) sebelum handshake SSH kelar, hanguskan!
+					continue 
+				}
+			}
+
+			// Kirim data yang sudah steril (Atau data speedtest loss murni setelah gerbang dikunci)
+			_, err = target.Write(data)
 			if err != nil {
 				break
 			}
