@@ -37,7 +37,7 @@ echo "net.ipv4.tcp_keepalive_time=60" >> /etc/sysctl.conf
 sysctl -p /etc/sysctl.conf 2>/dev/null
 
 # =====================================================================
-# 🔥 SETUP OPENSSH: Pahat Host Keys & Buka Parameter Enkripsi Ringan CPU
+# 🔥 SETUP OPENSSH: Pahat Host Keys & Buka Parameter Enkripsi Longgar
 # =====================================================================
 echo "[*] Membuat Host Keys OpenSSH..."
 ssh-keygen -A
@@ -72,9 +72,9 @@ EOF
 chmod +x /etc/profile.d/99-respon-server.sh
 
 # =====================================================================
-# 🛠️ RACIKAN SSHD TUNING: SPEK BADAK ANTI-EOF + ULTRA THROUGHPUT
+# 🛠️ RACIKAN SSHD CONFIG TUNING (ANTI-EOF + MULTI-ENKRIPSI GAK PILIH-PILIH HP)
 # =====================================================================
-echo "[*] Membuat Konfigurasi sshd_config Turbo..."
+echo "[*] Membuat Konfigurasi sshd_config Turbo (SPEK BADAK ANTI-EOF)..."
 cat << 'EOF' > /etc/ssh/sshd_config
 Port 22
 ListenAddress 127.0.0.1
@@ -93,16 +93,16 @@ MaxStartups 100:30:500
 MaxSessions 100
 MaxAuthTries 10
 
-# 🔥 SUNTIKAN SAKTI ANTI-REKONEK
+# 🔥 SUNTIKAN SAKTI ANTI-REKONEK (Diselaraskan dengan Script Go v6.0)
 ClientAliveInterval 30
 ClientAliveCountMax 99999
 TCPKeepAlive yes
 LoginGraceTime 30
 
-# 🚀 CIPHERS OPTIMIZED FOR SPEED: Hanya menyisakan yang enteng di CPU agar bandwidth plong
-Ciphers chacha20-poly1305@openssh.com,aes128-gcm@openssh.com,aes256-gcm@openssh.com
-KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org
-MACs umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+# 🚀 RACIKAN MULTI-ENKRIPSI LENGKAP: HTTP Custom & SSH Client Lain Dijamin Langsung Konek
+Ciphers aes128-gcm@openssh.com,aes256-gcm@openssh.com,chacha20-poly1305@openssh.com,aes128-ctr,aes192-ctr,aes256-ctr,aes128-cbc,3des-cbc
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group14-sha256,diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1
+MACs umac-64-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha1,hmac-sha1-96
 EOF
 # =====================================================================
 
@@ -121,7 +121,7 @@ openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 \
     -subj "/C=ID/ST=Jakarta/L=Jakarta/O=RailwaySSH/CN=localhost" \
     -keyout /etc/stunnel/stunnel.pem -out /etc/stunnel/stunnel.pem
 
-# 🚀 OPTIMASI STUNNEL: Matikan debug log & perkecil timeout agar RAM fokus ke speed data
+# 🚀 OPTIMASI STUNNEL (Performa difokuskan ke speed data, log dikecilin)
 echo "[*] Mengonfigurasi Stunnel internal di Port $SSL_INTERNAL_PORT..."
 cat <<EOF > /etc/stunnel/stunnel.conf
 pid = /var/run/stunnel.pid
