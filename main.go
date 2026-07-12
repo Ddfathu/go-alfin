@@ -30,7 +30,7 @@ var (
 	clientMap    = make(map[string]*ClientTracker)
 )
 
-// 🔄 ZERO-JITTER BUFFER POOL: Daur ulang memori agar Go gak usah "bersih-bersih" mendadak
+// 🔄 ZERO-JITTER BUFFER POOL: Daur ulang memori agar Go tidak "lag" bersih-bersih
 var bufferPool = sync.Pool{
 	New: func() interface{} {
 		return make([]byte, 65536)
@@ -86,10 +86,10 @@ func turboTune(c net.Conn) {
 }
 
 func main() {
-	// 🔥 AMPUTASI AUTO-GC: Matikan fitur bersih-bersih otomatis bawaan Go agar tidak menahan jaringan saat upload
+	// 🔥 AMPUTASI AUTO-GC: Matikan pembersihan otomatis bawaan Go
 	debug.SetGCPercent(-1)
 
-	// ⏰ PAWANG MEMORI OTOMATIS: Bersih-bersih berjadwal setiap 10 detik agar memori gak bengkak
+	// ⏰ PAWANG MEMORI OTOMATIS: Bersih-bersih berjadwal setiap 10 detik
 	go func() {
 		for {
 			time.Sleep(10 * time.Second)
@@ -109,7 +109,7 @@ func main() {
 	magenta := "\033[35m"
 	green := "\033[32m"
 
-	rawTitle := "⚡ GOLANG TUNNEL PRO: v8.0 FIXED SABAR ULTRA HYBRID ⚡"
+	rawTitle := "⚡ GOLANG TUNNEL PRO: v6.1 FIXED CORE SABAR ⚡"
 	rawOwner := "👑 PRIVATE TUNNEL BY: DEDEFATHU 👑"
 	
 	paddingTitle := (66 - len(rawTitle)) / 2
@@ -166,7 +166,7 @@ func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 		return
 	}
 
-	// Jalur WebSocket (Enhanced Payload Handler)
+	// Jalur WebSocket (Enhanced Payload)
 	reqStr := string(rawPayload)
 	wsKey := ""
 	for _, line := range strings.Split(reqStr, "\r\n") {
@@ -195,7 +195,7 @@ func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 		return
 	}
 
-	// Hubungkan ke SSH Internal (Dropbear)
+	// Hubungkan ke SSH Internal
 	sshTarget, err := net.DialTimeout("tcp", wsHost+":"+wsPort, 4*time.Second)
 	if err != nil {
 		return
@@ -203,22 +203,12 @@ func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 	turboTune(sshTarget)
 	defer sshTarget.Close()
 
-	// 🔥 PERBAIKAN: Paket pertama dari HP berisi ampas HTTP method tiruan dari payload enhanced,
-	// Kita periksa dan saring langsung di sini sebelum dilempar ke Dropbear agar jabat tangan awal lulus!
-	cleanPayload := rawPayload
-	if strings.Contains(reqStr, "PATCH") || strings.Contains(reqStr, "HTTP/") || strings.Contains(reqStr, "BMOVE") || strings.Contains(reqStr, "GET ") {
-		if idx := bytes.Index(rawPayload, []byte("SSH-")); idx != -1 {
-			cleanPayload = rawPayload[idx:]
-		} else if idx := bytes.Index(rawPayload, []byte{0x53, 0x53, 0x48}); idx != -1 { // \x53\x53\x48 = SSH
-			cleanPayload = rawPayload[idx:]
-		} else {
-			// Jika murni ampas HTTP tanpa ada tanda SSH di paket pertama, jangan kirim apa-apa dulu ke Dropbear
-			cleanPayload = nil
-		}
-	}
-
-	if len(cleanPayload) > 0 {
-		_, _ = sshTarget.Write(cleanPayload)
+	// 🔥 FIXED: Di paket pertama, jika ada string SSH, langsung kirim.
+	// Jika belum ada (karena murni teks HTTP enhanced), kita biarkan dan serahkan ke loop pipePure di bawah.
+	if idx := bytes.Index(rawPayload, []byte("SSH-")); idx != -1 {
+		_, _ = sshTarget.Write(rawPayload[idx:])
+	} else if idx := bytes.Index(rawPayload, []byte{0x53, 0x53, 0x48}); idx != -1 {
+		_, _ = sshTarget.Write(rawPayload[idx:])
 	}
 
 	pipePure(c, sshTarget, true)
@@ -234,7 +224,7 @@ func pipePure(client, target net.Conn, isWS bool) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Jalur A: HP -> SSH Server (Upload / Saringan Sabar Terkendali)
+	// Jalur A: HP -> SSH Server (MODE SABAR UTUH)
 	go func() {
 		defer wg.Done()
 		
@@ -242,11 +232,8 @@ func pipePure(client, target net.Conn, isWS bool) {
 		defer bufferPool.Put(buf) 
 		
 		sshHandshakeFound := false
-		packetCounter := 1 // Paket pertama dihitung dari fase awal handlePureTurbo
-
+		
 		for {
-			packetCounter++
-			
 			if isWS && !sshHandshakeFound {
 				client.SetReadDeadline(time.Now().Add(5 * time.Second))
 			} else {
@@ -264,37 +251,26 @@ func pipePure(client, target net.Conn, isWS bool) {
 			}
 			
 			data := buf[:n]
-			cleanChunk := data
 			
-			// 🔥 INTEGRASI LOGIK FIXED v7.7: Saringan hanya boleh aktif di 3 paket pertama
-			// Setelah paket ke-3 (saat Speedtest Upload puncak), saringan mati total dan data loss murni!
-			if isWS && !sshHandshakeFound && packetCounter <= 3 {
-				chunkStr := string(data)
-				if strings.Contains(chunkStr, "PATCH") || strings.Contains(chunkStr, "HTTP/") || strings.Contains(chunkStr, "BMOVE") || strings.Contains(chunkStr, "GET ") {
-					if idx := bytes.Index(data, []byte("SSH-")); idx != -1 {
-						cleanChunk = data[idx:]
-						sshHandshakeFound = true
-						client.SetReadDeadline(time.Time{})
-						checkSmartRecovery(client.RemoteAddr().String(), false)
-					} else if idx := bytes.Index(data, []byte{0x53, 0x53, 0x48}); idx != -1 {
-						cleanChunk = data[idx:]
-						sshHandshakeFound = true
-						client.SetReadDeadline(time.Time{})
-						checkSmartRecovery(client.RemoteAddr().String(), false)
-					} else {
-						continue // Ampas HTTP murni dibakar
-					}
-				} else if strings.Contains(chunkStr, "SSH-") || bytes.Contains(data, []byte{0x53, 0x53, 0x48}) {
+			// 🔥 MODE SABAR AKTIF 100%: Filter ketat bawaan script Anda
+			if isWS && !sshHandshakeFound {
+				if idx := bytes.Index(data, []byte("SSH-")); idx != -1 {
+					data = data[idx:]
 					sshHandshakeFound = true
 					client.SetReadDeadline(time.Time{})
 					checkSmartRecovery(client.RemoteAddr().String(), false)
+				} else if idx := bytes.Index(data, []byte{0x53, 0x53, 0x48}); idx != -1 { // Cek heksadesimal \x53\x53\x48
+					data = data[idx:]
+					sshHandshakeFound = true
+					client.SetReadDeadline(time.Time{})
+					checkSmartRecovery(client.RemoteAddr().String(), false)
+				} else {
+					// 🧠 INI DIA: Teks ampas PATCH/BMOVE/HTTP murni langsung dibakar dan dilewati (Mode Sabar)
+					continue 
 				}
-			} else {
-				// Jika lewat dari fase bahaya jabat tangan awal, kunci status agar data upload mulus
-				sshHandshakeFound = true
 			}
 
-			_, err = target.Write(cleanChunk)
+			_, err = target.Write(data)
 			if err != nil {
 				break
 			}
@@ -302,7 +278,7 @@ func pipePure(client, target net.Conn, isWS bool) {
 		once.Do(closeAll)
 	}()
 
-	// Jalur B: SSH Server -> HP (Download Speed Los Maksimal)
+	// Jalur B: SSH Server -> HP (Download Speed Los)
 	go func() {
 		defer wg.Done()
 		
@@ -316,7 +292,6 @@ func pipePure(client, target net.Conn, isWS bool) {
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					if isWS {
-						// Kirim ping ke client jika idle agar session tetap hidup
 						_, err = client.Write([]byte{0x89, 0x00})
 						if err != nil {
 							break
