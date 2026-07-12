@@ -20,10 +20,52 @@ const (
 	TLS_HANDSHAKE_BYTE = 0x16
 )
 
+// 🧠 AI SMART RECOVERY DEFINITION
+type ClientTracker struct {
+	FailCount  int
+	LastActive time.Time
+}
+
+var (
+	trackerMutex sync.Mutex
+	clientMap    = make(map[string]*ClientTracker)
+)
+
+// 🔄 ZERO-JITTER BUFFER POOL: Daur ulang memori agar Go gak usah "bersih-bersih" mendadak
 var bufferPool = sync.Pool{
 	New: func() interface{} {
 		return make([]byte, 65536)
 	},
+}
+
+func checkSmartRecovery(remoteAddr string, isFail bool) bool {
+	trackerMutex.Lock()
+	defer trackerMutex.Unlock()
+
+	ip, _, _ := net.SplitHostPort(remoteAddr)
+	
+	tracker, exists := clientMap[ip]
+	if !exists {
+		tracker = &ClientTracker{FailCount: 0, LastActive: time.Now()}
+		clientMap[ip] = tracker
+	}
+
+	if !isFail {
+		tracker.FailCount = 0
+		tracker.LastActive = time.Now()
+		return false
+	}
+
+	tracker.FailCount++
+	tracker.LastActive = time.Now()
+
+	if tracker.FailCount >= 5 {
+		log.Printf("\033[31m[⚠️ AI DETECT] Aplikasi HP terdeteksi STUCK/TIMEOUT (%d x)! Mengaktifkan Force Auto-Fresh...\033[0m\n", tracker.FailCount)
+		tracker.FailCount = 0 
+		return true           
+	}
+
+	return false
 }
 
 func getEnv(key, fallback string) string {
@@ -33,22 +75,28 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+// 🚀 ENGINE TUNING MAX: Pipa buffer diperlebar maksimal untuk kecepatan loss
 func turboTune(c net.Conn) {
 	if tcp, ok := c.(*net.TCPConn); ok {
 		_ = tcp.SetNoDelay(true)
 		_ = tcp.SetKeepAlive(true)
-		_ = tcp.SetKeepAlivePeriod(30 * time.Second)
-		_ = tcp.SetReadBuffer(524288)  // 512KB Buffer OS untuk kestabilan upload
-		_ = tcp.SetWriteBuffer(524288) 
+		_ = tcp.SetKeepAlivePeriod(10 * time.Second)
+		
+		// Buffer 256KB agar tidak ada antrean paket di level OS Railway
+		_ = tcp.SetReadBuffer(262144)  
+		_ = tcp.SetWriteBuffer(262144) 
 	}
 }
 
 func main() {
+	// 🔥 AMPUTASI AUTO-GC: Matikan fitur bersih-bersih otomatis bawaan Go agar tidak menahan jaringan
 	debug.SetGCPercent(-1)
+
+	// ⏰ PAWANG MEMORI OTOMATIS: Bersih-bersih berjadwal setiap 10 detik agar memori gak bengkak
 	go func() {
 		for {
 			time.Sleep(10 * time.Second)
-			runtime.GC() 
+			runtime.GC() // Panggil pembersihan memori secara paksa di background goroutine
 		}
 	}()
 
@@ -58,7 +106,28 @@ func main() {
 	wsTargetHost := getEnv("WS_TARGET_HOST", "127.0.0.1")
 	wsTargetPort := getEnv("WS_TARGET_PORT", "22")
 
-	fmt.Printf("[monster-mux-go] ULTIMATE GUARD v9.1 ACTIVE on Port: %s 🚀\n", listenPort)
+	// 🎨 ANSI COLOR & CENTER BANNER
+	reset := "\033[0m"
+	cyan := "\033[36m"
+	yellow := "\033[33m"
+	magenta := "\033[35m"
+	green := "\033[32m"
+
+	rawTitle := "⚡ GOLANG TUNNEL PRO: v6.0 ZERO-JITTER AI TURBO ACTIVE ⚡"
+	rawOwner := "👑 PRIVATE TUNNEL BY: DEDEFATHU 👑"
+	
+	paddingTitle := (66 - len(rawTitle)) / 2
+	paddingOwner := (66 - len(rawOwner)) / 2
+	
+	centerTitle := strings.Repeat(" ", paddingTitle) + rawTitle
+	centerOwner := strings.Repeat(" ", paddingOwner) + rawOwner
+
+	log.Println(cyan + "==================================================================" + reset)
+	log.Println(yellow + centerTitle + reset)
+	log.Println(magenta + centerOwner + reset)
+	log.Println(green + "==================================================================" + reset)
+	log.Printf(green+"[*] Engine listening smoothly on port: %s\n"+reset, listenPort)
+	log.Println(cyan + "==================================================================" + reset)
 
 	listener, err := net.Listen("tcp", ":"+listenPort)
 	if err != nil {
@@ -79,14 +148,16 @@ func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 	turboTune(c) 
 	defer c.Close()
 
-	buf := make([]byte, 65536)
+	buf := make([]byte, 131072)
+	c.SetReadDeadline(time.Now().Add(4 * time.Second))
 	n, err := c.Read(buf)
 	if err != nil || n == 0 {
 		return
 	}
+	c.SetReadDeadline(time.Time{})
 	rawPayload := buf[:n]
 
-	// Jalur SSL Bypass
+	// Jalur SSL
 	if rawPayload[0] == TLS_HANDSHAKE_BYTE {
 		target, err := net.DialTimeout("tcp", sslHost+":"+sslPort, 4*time.Second)
 		if err != nil {
@@ -95,11 +166,11 @@ func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 		turboTune(target)
 		defer target.Close()
 		_, _ = target.Write(rawPayload)
-		pipePure(c, target, false, false) // 🔥 FIXED: Ditambahkan parameter ke-4 (false) agar tidak eror build
+		pipePure(c, target, false)
 		return
 	}
 
-	// Jalur WebSocket (Enhanced Payload Handler)
+	// Jalur WebSocket (Enhanced Payload)
 	reqStr := string(rawPayload)
 	wsKey := ""
 	for _, line := range strings.Split(reqStr, "\r\n") {
@@ -128,7 +199,7 @@ func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 		return
 	}
 
-	// Hubungkan ke SSH Internal (Dropbear)
+	// Hubungkan ke SSH Internal
 	sshTarget, err := net.DialTimeout("tcp", wsHost+":"+wsPort, 4*time.Second)
 	if err != nil {
 		return
@@ -136,22 +207,14 @@ func handlePureTurbo(c net.Conn, sslHost, sslPort, wsHost, wsPort string) {
 	turboTune(sshTarget)
 	defer sshTarget.Close()
 
-	// Fase Awal: Cari apakah ada kepala SSH di paket pertama
-	var cleanPayload []byte
 	if idx := bytes.Index(rawPayload, []byte("SSH-")); idx != -1 {
-		cleanPayload = rawPayload[idx:]
-	} else if idx := bytes.Index(rawPayload, []byte{0x53, 0x53, 0x48}); idx != -1 {
-		cleanPayload = rawPayload[idx:]
+		_, _ = sshTarget.Write(rawPayload[idx:])
 	}
 
-	if len(cleanPayload) > 0 {
-		_, _ = sshTarget.Write(cleanPayload)
-	}
-
-	pipePure(c, sshTarget, true, len(cleanPayload) > 0)
+	pipePure(c, sshTarget, true)
 }
 
-func pipePure(client, target net.Conn, isWS bool, initialHandshakeFound bool) {
+func pipePure(client, target net.Conn, isWS bool) {
 	var once sync.Once
 	closeAll := func() {
 		_ = client.Close()
@@ -161,35 +224,43 @@ func pipePure(client, target net.Conn, isWS bool, initialHandshakeFound bool) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Jalur A: HP -> SSH Server (Upload Speedtest Anti-Cut)
+	// Jalur A: HP -> SSH Server
 	go func() {
 		defer wg.Done()
-		buf := bufferPool.Get().([]byte)
-		defer bufferPool.Put(buf) 
 		
-		sshHandshakeFound := initialHandshakeFound
+		// Pinjam buffer dari Pool biar gak bikin sampah memori baru
+		buf := bufferPool.Get().([]byte)
+		defer bufferPool.Put(buf) // Kembalikan setelah selesai koneksi
+		
+		sshHandshakeFound := false
 		
 		for {
-			_ = client.SetReadDeadline(time.Now().Add(120 * time.Second))
+			if isWS && !sshHandshakeFound {
+				client.SetReadDeadline(time.Now().Add(5 * time.Second))
+			} else {
+				client.SetReadDeadline(time.Now().Add(120 * time.Second))
+			}
+
 			n, err := client.Read(buf)
 			if err != nil {
+				if isWS && !sshHandshakeFound {
+					if checkSmartRecovery(client.RemoteAddr().String(), true) {
+						time.Sleep(1 * time.Second) 
+					}
+				}
 				break
 			}
 			
 			data := buf[:n]
 			
-			// 🔥 GERBANG DYNAMIC PRECISENESS: Saringan aktif membakar ampas HTTP method sampai SSH ketemu
 			if isWS && !sshHandshakeFound {
 				if idx := bytes.Index(data, []byte("SSH-")); idx != -1 {
 					data = data[idx:]
-					sshHandshakeFound = true // KUNCI GERBANG TOTAL!
-					_ = client.SetReadDeadline(time.Time{})
-				} else if idx := bytes.Index(data, []byte{0x53, 0x53, 0x48}); idx != -1 {
-					data = data[idx:]
-					sshHandshakeFound = true // KUNCI GERBANG TOTAL!
-					_ = client.SetReadDeadline(time.Time{})
+					sshHandshakeFound = true
+					client.SetReadDeadline(time.Time{})
+					checkSmartRecovery(client.RemoteAddr().String(), false)
 				} else {
-					continue // Bersihkan ampas HTTP tiruan (BMOVE, PATCH, GET)
+					continue 
 				}
 			}
 
@@ -201,16 +272,28 @@ func pipePure(client, target net.Conn, isWS bool, initialHandshakeFound bool) {
 		once.Do(closeAll)
 	}()
 
-	// Jalur B: SSH Server -> HP (Download Speed Los Maksimal)
+	// Jalur B: SSH Server -> HP
 	go func() {
 		defer wg.Done()
+		
+		// Pinjam buffer dari Pool untuk download speed los maksimal
 		buf := bufferPool.Get().([]byte)
 		defer bufferPool.Put(buf)
 		
 		for {
-			_ = target.SetReadDeadline(time.Now().Add(60 * time.Second))
+			target.SetReadDeadline(time.Now().Add(20 * time.Second))
 			n, err := target.Read(buf)
+			
 			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					if isWS {
+						_, err = client.Write([]byte{0x89, 0x00})
+						if err != nil {
+							break
+						}
+						continue
+					}
+				}
 				break
 			}
 			
